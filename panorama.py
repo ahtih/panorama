@@ -304,6 +304,20 @@ for arg in sys.argv[1:]:
 	else:
 		positional_args.append(arg)
 
+if not positional_args:
+	print '''Usage:
+	%s IMAGE-FNAME
+		Extract and show keypoints from one image
+
+	%s IMAGE-FNAME IMAGE-FNAME [IMAGE-FNAME ...]
+		Match a set of images to each other, and print out raw matches for an AutoPano XML file
+
+	%s --testcase-fname=PANO-XML-FNAME [--print-training-data] MATCHES-XML-FNAME
+		Optimise the matches classifier (decision_value formula) against a testcase, using a raw matches file as input''' % \
+		((sys.argv[0],) * 3)
+
+	exit(1)
+
 correct_matches=None
 testcase_fname=keyword_args.get('--testcase-fname')
 if testcase_fname:
