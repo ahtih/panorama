@@ -312,15 +312,18 @@ if not positional_args:
 	%s IMAGE-FNAME IMAGE-FNAME [IMAGE-FNAME ...]
 		Match a set of images to each other, and print out raw matches for an AutoPano XML file
 
-	%s --testcase-fname=PANO-XML-FNAME [--print-training-data] MATCHES-XML-FNAME
-		Optimise the matches classifier (decision_value formula) against a testcase, using a raw matches file as input''' % \
+	%s --testcase-fname=PANO-XML-FNAME ... [--print-training-data] MATCHES-XML-FNAME ...
+		Optimise the matches classifier (decision_value formula) against testcases, using raw matches files as input''' % \
 		((sys.argv[0],) * 3)
 
 	exit(1)
 
 correct_matches=None
-testcase_fname=keyword_args.get('--testcase-fname')
-if testcase_fname:
+testcase_fnames=keyword_args.get('--testcase-fname')
+if testcase_fnames:
+	if not isinstance(testcase_fnames,list):
+		testcase_fnames=(testcase_fnames,)
+
 	correct_matches=dict()
 
 	class kolor_xml_handler(xml.sax.handler.ContentHandler):
@@ -340,9 +343,10 @@ if testcase_fname:
 				img2=self.image_fnames[int(attrs.get('image2'))]
 				correct_matches[tuple(sorted((img1,img2)))]=True
 
-	parser=xml.sax.make_parser()
-	parser.setContentHandler(kolor_xml_handler())
-	parser.parse(open(testcase_fname,'r'))
+	for testcase_fname in testcase_fnames:
+		parser=xml.sax.make_parser()
+		parser.setContentHandler(kolor_xml_handler())
+		parser.parse(open(testcase_fname,'r'))
 
 	print_training_data=('--print-training-data' in keyword_args)
 	training_data=[]
@@ -389,55 +393,56 @@ if testcase_fname:
 	nonzero_tries,nonzero_successes=0,0
 	correct_preditions_with_zero_score=0
 
-	image_fnames=[]
-	for line in open(positional_args[0],'r'):
-		if line.strip().endswith(' keypoints'):
-			image_fnames.append(line.partition(' ')[0].rpartition('/')[2])
-			continue
+	for matches_name in positional_args:
+		image_fnames=[]
+		for line in open(matches_name,'r'):
+			if line.strip().endswith(' keypoints'):
+				image_fnames.append(line.partition(' ')[0].rpartition('/')[2])
+				continue
 
-		m=re.search(r'<!-- image ([0-9]+)<-->([0-9]+): .* ([-+]*[0-9.]+)deg, score ([0-9.]+)/[0-9.]+=([0-9.]+), shift ([-+]*[0-9.]+)px, *([-+]*[0-9.]+)px',line)
-		if not m:
-			continue
+			m=re.search(r'<!-- image ([0-9]+)<-->([0-9]+): .* ([-+]*[0-9.]+)deg, score ([0-9.]+)/[0-9.]+=([0-9.]+), shift ([-+]*[0-9.]+)px, *([-+]*[0-9.]+)px',line)
+			if not m:
+				continue
 
-		fields=m.groups()
-		img_idx1=int(fields[0])
-		img_idx2=int(fields[1])
-		angle_deg=float(fields[2])
-		count=float(fields[3])
-		score=float(fields[4])
-		x_shift=int(fields[5])
-		y_shift=int(fields[6])
+			fields=m.groups()
+			img_idx1=int(fields[0])
+			img_idx2=int(fields[1])
+			angle_deg=float(fields[2])
+			count=float(fields[3])
+			score=float(fields[4])
+			x_shift=int(fields[5])
+			y_shift=int(fields[6])
 
-		fnames_pair=tuple(sorted((image_fnames[img_idx1],image_fnames[img_idx2])))
-		is_correct_match=correct_matches.get(fnames_pair)
-		if is_correct_match is None:
-			print 'Warning: image pair %s %s not present in testcases' % fnames_pair
-			continue
+			fnames_pair=tuple(sorted((image_fnames[img_idx1],image_fnames[img_idx2])))
+			is_correct_match=correct_matches.get(fnames_pair)
+			if is_correct_match is None:
+				print 'Warning: image pair %s %s not present in testcases' % fnames_pair
+				continue
 
-		if score > 0:
-			shift_ratio=calc_shift_ratio(x_shift,y_shift)
-			training_data.append((int(is_correct_match),score,count,min(50,abs(angle_deg)),shift_ratio))
+			if score > 0:
+				shift_ratio=calc_shift_ratio(x_shift,y_shift)
+				training_data.append((int(is_correct_match),score,count,min(50,abs(angle_deg)),shift_ratio))
 
-			if print_training_data:
-				print '%d 1:%s 2:%s 3:%s 4:%s' % training_data[-1]
+				if print_training_data:
+					print '%d 1:%s 2:%s 3:%s 4:%s' % training_data[-1]
 
-			decision_value=score - (100 + min(100,abs(angle_deg) * 3) + shift_ratio * 60)
-			decision_value=score*0.00726 + count*0.1049 + min(50,abs(angle_deg))*-0.0482 + (-1.885)		# trained for test-pano-2chan-kpcoverage2.mypoints
-			decision_value=score*-0.00017 + count*0.157 + min(50,abs(angle_deg))*-0.0372 + shift_ratio*-1.341 + (-2.595)		# trained for test-pano-2chan-resize8-kpcoverage2-liblinear.mypoints
-			# decision_value=score*0.02 + count*0.74 + min(50,abs(angle_deg))*-0.24 + shift_ratio*-0.38 + (-16.145447725)		# iterative_optimiser trained for test-pano-2chan-resize8-kpcoverage2-liblinear.mypoints
+				decision_value=score - (100 + min(100,abs(angle_deg) * 3) + shift_ratio * 60)
+				decision_value=score*0.00726 + count*0.1049 + min(50,abs(angle_deg))*-0.0482 + (-1.885)		# trained for test-pano-2chan-kpcoverage2.mypoints
+				decision_value=score*-0.00017 + count*0.157 + min(50,abs(angle_deg))*-0.0372 + shift_ratio*-1.341 + (-2.595)		# trained for test-pano-2chan-resize8-kpcoverage2-liblinear.mypoints
+				# decision_value=score*0.02 + count*0.74 + min(50,abs(angle_deg))*-0.24 + shift_ratio*-0.38 + (-16.145447725)		# iterative_optimiser trained for test-pano-2chan-resize8-kpcoverage2-liblinear.mypoints
 
-			predicted=(decision_value >= 0)
-			nonzero_successes+=int(predicted == is_correct_match)
-			nonzero_tries+=1
-		else:
-			predicted=False
-			decision_value=-1.11111
-			correct_preditions_with_zero_score+=int(not is_correct_match)
+				predicted=(decision_value >= 0)
+				nonzero_successes+=int(predicted == is_correct_match)
+				nonzero_tries+=1
+			else:
+				predicted=False
+				decision_value=-1.11111
+				correct_preditions_with_zero_score+=int(not is_correct_match)
 
-		tries+=1
+			tries+=1
 
-		if not print_training_data and predicted != is_correct_match:
-			print is_correct_match,decision_value,line.strip()
+			if not print_training_data and predicted != is_correct_match:
+				print is_correct_match,decision_value,line.strip()
 
 	if not print_training_data and tries:
 		print 'Successes: %u/%u %.2f%% (nonzero links only)' % (nonzero_successes,nonzero_tries,
