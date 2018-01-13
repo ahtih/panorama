@@ -344,122 +344,121 @@ if testcase_fname:
 	parser.setContentHandler(kolor_xml_handler())
 	parser.parse(open(testcase_fname,'r'))
 
-if len(positional_args) == 1:
-	if correct_matches is None:
-		ImageKeypoints(positional_args[0]).show_img_with_keypoints(0)
-	else:
-		print_training_data=('--print-training-data' in keyword_args)
-		training_data=[]
-		optimiser_params=(('score',iterative_optimiser.FloatParam(0,1)),
-						('count',iterative_optimiser.FloatParam(0,1)),
-						('angle_deg_limit50',iterative_optimiser.FloatParam(-1,0)),
-						('shift_ratio',iterative_optimiser.FloatParam(-1,0)),
-						)
+	print_training_data=('--print-training-data' in keyword_args)
+	training_data=[]
+	optimiser_params=(('score',iterative_optimiser.FloatParam(0,1)),
+					('count',iterative_optimiser.FloatParam(0,1)),
+					('angle_deg_limit50',iterative_optimiser.FloatParam(-1,0)),
+					('shift_ratio',iterative_optimiser.FloatParam(-1,0)),
+					)
 
-		def optimiser_test_func(params):
-			global training_data
+	def optimiser_test_func(params):
+		global training_data
 
-			scores=[]
-			total_correct_matches=0
-			for e in training_data:
-				scores.append((sum(value*weight for value,weight in zip(e[1:],params)),e[0]))
-				total_correct_matches+=int(bool(e[0]))
+		scores=[]
+		total_correct_matches=0
+		for e in training_data:
+			scores.append((sum(value*weight for value,weight in zip(e[1:],params)),e[0]))
+			total_correct_matches+=int(bool(e[0]))
 
-			scores.sort()
+		scores.sort()
 
-			best_correct_predictions=0
-			best_threshold=0
+		best_correct_predictions=0
+		best_threshold=0
 
-			# print
+		# print
 
-			cumulative_correct_matches=0
-			prev_score=None
-			for idx,(score,is_correct_match) in enumerate(scores):
-				correct_predictions_at_this_threshold=(idx - cumulative_correct_matches) + \
+		cumulative_correct_matches=0
+		prev_score=None
+		for idx,(score,is_correct_match) in enumerate(scores):
+			correct_predictions_at_this_threshold=(idx - cumulative_correct_matches) + \
 													(total_correct_matches - cumulative_correct_matches)
-				# print idx,is_correct_match,cumulative_correct_matches,total_correct_matches,correct_predictions_at_this_threshold,score
+			# print idx,is_correct_match,cumulative_correct_matches,total_correct_matches,correct_predictions_at_this_threshold,score
 
-				cumulative_correct_matches+=int(bool(is_correct_match))
-				if correct_predictions_at_this_threshold > best_correct_predictions:
-					best_correct_predictions=correct_predictions_at_this_threshold
-					if prev_score is None:
-						prev_score=score
-					best_threshold=0.5 * (score + prev_score)
+			cumulative_correct_matches+=int(bool(is_correct_match))
+			if correct_predictions_at_this_threshold > best_correct_predictions:
+				best_correct_predictions=correct_predictions_at_this_threshold
+				if prev_score is None:
 					prev_score=score
+				best_threshold=0.5 * (score + prev_score)
+				prev_score=score
 
-			return (best_correct_predictions,str(best_threshold))
+		return (best_correct_predictions,str(best_threshold))
 
-		tries=0
-		nonzero_tries,nonzero_successes=0,0
-		correct_preditions_with_zero_score=0
+	tries=0
+	nonzero_tries,nonzero_successes=0,0
+	correct_preditions_with_zero_score=0
 
-		image_fnames=[]
-		for line in open(positional_args[0],'r'):
-			if line.strip().endswith(' keypoints'):
-				image_fnames.append(line.partition(' ')[0].rpartition('/')[2])
-				continue
+	image_fnames=[]
+	for line in open(positional_args[0],'r'):
+		if line.strip().endswith(' keypoints'):
+			image_fnames.append(line.partition(' ')[0].rpartition('/')[2])
+			continue
 
-			m=re.search(r'<!-- image ([0-9]+)<-->([0-9]+): .* ([-+]*[0-9.]+)deg, score ([0-9.]+)/[0-9.]+=([0-9.]+), shift ([-+]*[0-9.]+)px, *([-+]*[0-9.]+)px',line)
-			if not m:
-				continue
+		m=re.search(r'<!-- image ([0-9]+)<-->([0-9]+): .* ([-+]*[0-9.]+)deg, score ([0-9.]+)/[0-9.]+=([0-9.]+), shift ([-+]*[0-9.]+)px, *([-+]*[0-9.]+)px',line)
+		if not m:
+			continue
 
-			fields=m.groups()
-			img_idx1=int(fields[0])
-			img_idx2=int(fields[1])
-			angle_deg=float(fields[2])
-			count=float(fields[3])
-			score=float(fields[4])
-			x_shift=int(fields[5])
-			y_shift=int(fields[6])
+		fields=m.groups()
+		img_idx1=int(fields[0])
+		img_idx2=int(fields[1])
+		angle_deg=float(fields[2])
+		count=float(fields[3])
+		score=float(fields[4])
+		x_shift=int(fields[5])
+		y_shift=int(fields[6])
 
-			fnames_pair=tuple(sorted((image_fnames[img_idx1],image_fnames[img_idx2])))
-			is_correct_match=correct_matches.get(fnames_pair)
-			if is_correct_match is None:
-				print 'Warning: image pair %s %s not present in testcases' % fnames_pair
-				continue
+		fnames_pair=tuple(sorted((image_fnames[img_idx1],image_fnames[img_idx2])))
+		is_correct_match=correct_matches.get(fnames_pair)
+		if is_correct_match is None:
+			print 'Warning: image pair %s %s not present in testcases' % fnames_pair
+			continue
 
-			if score > 0:
-				shift_ratio=calc_shift_ratio(x_shift,y_shift)
-				training_data.append((int(is_correct_match),score,count,min(50,abs(angle_deg)),shift_ratio))
+		if score > 0:
+			shift_ratio=calc_shift_ratio(x_shift,y_shift)
+			training_data.append((int(is_correct_match),score,count,min(50,abs(angle_deg)),shift_ratio))
 
-				if print_training_data:
-					print '%d 1:%s 2:%s 3:%s 4:%s' % training_data[-1]
+			if print_training_data:
+				print '%d 1:%s 2:%s 3:%s 4:%s' % training_data[-1]
 
-				decision_value=score - (100 + min(100,abs(angle_deg) * 3) + shift_ratio * 60)
-				decision_value=score*0.00726 + count*0.1049 + min(50,abs(angle_deg))*-0.0482 + (-1.885)		# trained for test-pano-2chan-kpcoverage2.mypoints
-				decision_value=score*-0.00017 + count*0.157 + min(50,abs(angle_deg))*-0.0372 + shift_ratio*-1.341 + (-2.595)		# trained for test-pano-2chan-resize8-kpcoverage2-liblinear.mypoints
-				# decision_value=score*0.02 + count*0.74 + min(50,abs(angle_deg))*-0.24 + shift_ratio*-0.38 + (-16.145447725)		# iterative_optimiser trained for test-pano-2chan-resize8-kpcoverage2-liblinear.mypoints
+			decision_value=score - (100 + min(100,abs(angle_deg) * 3) + shift_ratio * 60)
+			decision_value=score*0.00726 + count*0.1049 + min(50,abs(angle_deg))*-0.0482 + (-1.885)		# trained for test-pano-2chan-kpcoverage2.mypoints
+			decision_value=score*-0.00017 + count*0.157 + min(50,abs(angle_deg))*-0.0372 + shift_ratio*-1.341 + (-2.595)		# trained for test-pano-2chan-resize8-kpcoverage2-liblinear.mypoints
+			# decision_value=score*0.02 + count*0.74 + min(50,abs(angle_deg))*-0.24 + shift_ratio*-0.38 + (-16.145447725)		# iterative_optimiser trained for test-pano-2chan-resize8-kpcoverage2-liblinear.mypoints
 
-				predicted=(decision_value >= 0)
-				nonzero_successes+=int(predicted == is_correct_match)
-				nonzero_tries+=1
-			else:
-				predicted=False
-				decision_value=-1.11111
-				correct_preditions_with_zero_score+=int(not is_correct_match)
+			predicted=(decision_value >= 0)
+			nonzero_successes+=int(predicted == is_correct_match)
+			nonzero_tries+=1
+		else:
+			predicted=False
+			decision_value=-1.11111
+			correct_preditions_with_zero_score+=int(not is_correct_match)
 
-			tries+=1
+		tries+=1
 
-			if not print_training_data and predicted != is_correct_match:
-				print is_correct_match,decision_value,line.strip()
+		if not print_training_data and predicted != is_correct_match:
+			print is_correct_match,decision_value,line.strip()
 
-		if not print_training_data and tries:
-			print 'Successes: %u/%u %.2f%% (nonzero links only)' % (nonzero_successes,nonzero_tries,
+	if not print_training_data and tries:
+		print 'Successes: %u/%u %.2f%% (nonzero links only)' % (nonzero_successes,nonzero_tries,
 																	nonzero_successes*100.0/nonzero_tries)
-			print 'Successes: %u/%u %.2f%%' % (nonzero_successes + correct_preditions_with_zero_score,
+		print 'Successes: %u/%u %.2f%%' % (nonzero_successes + correct_preditions_with_zero_score,
 								tries,(nonzero_successes + correct_preditions_with_zero_score)*100.0/tries)
 
-			# print 'Optimising with the following parameters:', \
-			#									' '.join(map(operator.itemgetter(0),optimiser_params))
-			best_params=iterative_optimiser.optimise([p[1] for p in optimiser_params],
+		# print 'Optimising with the following parameters:', \
+		#									' '.join(map(operator.itemgetter(0),optimiser_params))
+		best_params=iterative_optimiser.optimise([p[1] for p in optimiser_params],
 																			optimiser_test_func,30,False)
-			iterative_optimiser_successes,threshold_str=optimiser_test_func(best_params)
-			print 'Successes: %u/%u %.2f%% (iterative_optimiser with params %s and threshold %s)' % \
+		iterative_optimiser_successes,threshold_str=optimiser_test_func(best_params)
+		print 'Successes: %u/%u %.2f%% (iterative_optimiser with params %s and threshold %s)' % \
 							(iterative_optimiser_successes + correct_preditions_with_zero_score,
 							tries,
 							(iterative_optimiser_successes + correct_preditions_with_zero_score) * \
 																							100.0/tries,
 							' '.join(map(str,best_params)),threshold_str)
+
+if len(positional_args) == 1:
+	ImageKeypoints(positional_args[0]).show_img_with_keypoints(0)
 else:
 	print_matches_for_images(positional_args)
 
