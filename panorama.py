@@ -4,7 +4,7 @@
 import sys,math,operator,re,xml.sax.handler,xml.sax,numpy,cv2,matplotlib.pyplot
 import iterative_optimiser
 
-RESIZE_FACTOR=6
+RESIZE_FACTOR=8
 IMG_HISTOGRAM_SIZE=10
 
 detector_patch_size=31
@@ -444,64 +444,3 @@ else:
 # img1.show_img_with_keypoints([matches[xy_pair[4]].queryIdx for xy_pair in representative_xy_pairs])
 # if len(sys.argv) >= 1+3:
 #	cv2.imwrite(sys.argv[3],img1.img)
-
-##########################################
-# 691..714
-#
-# täiesti valed lingid:
-#        <!-- image 0<-->2: 5170 matches, distances 25:35, +19deg, score 14, shift +1702px,+73px -->
-#        <!-- image 10<-->20: 5824 matches, distances 26:37, -15deg, score 14, shift +180px,+3618px -->
-#        <!-- image 2<-->14: 3023 matches, distances 29:41, -54deg, score 20, shift +209px,+2665px -->
-#        <!-- image 1<-->6: 4458 matches, distances 29:37, -2deg, score 30, shift -3260px,+115px -->
-#        <!-- image 5<-->22: 6093 matches, distances 27:35, -2deg, score 12, shift +22px,+2521px -->
-#
-# üks match 3st on vale:
-#        <!-- image 14<-->15: 2600 matches, distances 19:46, -48deg, score 24, shift +742px,+1887px -->
-#
-# tegelikult peaks olema match (kuigi mitte tingimata õige):
-#        <!-- image 8<-->12: 5630 matches, distances 25:35, -79deg, score 10, shift -1747px,+4537px -->
-#        <!-- image 19<-->20: 5877 matches, distances 24:37, -78deg, score 12, shift -5730px,+7519px -->
-#        <!-- image 8<-->20: 5448 matches, distances 25:35, -179deg, score 9, shift +5181px,+6376px --> tegelikult ca 0deg
-#		<!-- image 16<-->17: 6141 matches, distances 23:35, -35deg, score 16, shift -4992px,+2835px -->
-#		<!-- image 9<-->11: 5975 matches, distances 25:32, -50deg, score 10, shift -1180px,+1419px --> tegelikult ca 10deg, kuid oluline nurkade erinevus pildi eri osades on ka
-#		<!-- image 7<-->8: 5487 matches, distances 28:35, -175deg, score 9, shift +177px,+6169px --> tegelikult ca 0deg
-#		<!-- image 7<-->18: 6095 matches, distances 24:34, +85deg, score 14, shift +2461px,-1851px -->
-#		<!-- image 17<-->19: 5702 matches, distances 30:36, -57deg, score 10, shift -2241px,+3648px -->
-#		<!-- image 3<-->22: 6539 matches, distances 29:38, +32deg, score 8, shift +978px,+2083px -->
-#
-# CLAHE40-8x8:
-#
-# tegelikult peaks olema match (kuigi mitte tingimata õige):
-#		<!-- image 10<-->11: 6790 matches, distances 35:41, -18deg, score 10, shift -404px,-3024px -->
-#		<!-- image 7<-->8: 6508 matches, distances 24:41, -158deg, score 7, shift +3469px,+9593px -->	tegelikult ca 0deg
-#		<!-- image 7<-->12: 6402 matches, distances 27:41, -150deg, score 7, shift +939px,+7729px -->	tegelikult ca 20deg
-#
-# 2chan:
-#
-# tegelikult peaks olema match (kuigi mitte tingimata õige):
-#		<!-- image 2<-->15: 12425 matches, distances 31:38, -79deg, score 11, shift -979px,+5059px -->	väga väike ülekate küll
-#		<!-- image 5<-->11: 13566 matches, distances 29:36, -4deg, score 10, shift -411px,-4208px -->
-#		<!-- image 7<-->8: 12983 matches, distances 24:38, -5deg, score 10, shift -1241px,+364px -->
-#		<!-- image 7<-->12: 13051 matches, distances 27:39, +35deg, score 10, shift +927px,-73px -->
-#		<!-- image 7<-->13: 12974 matches, distances 31:41, -173deg, score 9, shift +2306px,+7089px -->	tegelikult on ca 30deg
-#		<!-- image 7<-->18: 12828 matches, distances 32:38, +39deg, score 14, shift +3097px,-3px --> tegelikult ca 10deg
-#		<!-- image 11<-->12: 12822 matches, distances 30:38, -48deg, score 34, shift +1177px,+1363px -->
-#		<!-- image 8<-->12: 13115 matches, distances 33:38, +93deg, score 11, shift +6830px,+1893px -->
-#		<!-- image 8<-->21: 12722 matches, distances 31:39, -165deg, score 12, shift +2667px,+6064px --> tegelikult ca 10deg
-#		<!-- image 9<-->11: 13320 matches, distances 24:38, -13deg, score 20, shift -2613px,-3210px -->
-#		<!-- image 9<-->12: 13274 matches, distances 32:38, -146deg, score 9, shift +1707px,+6880px -->
-#		<!-- image 2<-->3: 12541 matches, distances 29:36, +6deg, score 11, shift -2333px,+1851px -->	vale match
-#		<!-- image 22<-->23: 12769 matches, distances 30:37, +40deg, score 22, shift +5244px,+486px -->
-#		<!-- image 3<-->4: 12724 matches, distances 27:36, -105deg, score 10, shift +827px,+4940px --> tegelikult ca 0deg
-#		<!-- image 4<-->10: 12965 matches, distances 29:35, +118deg, score 11, shift +6448px,+1976px --> tegelikult ca 0deg
-#		<!-- image 3<-->22: 13001 matches, distances 29:36, +91deg, score 10, shift +5677px,+546px -->
-#		<!-- image 0<-->14: 10741 matches, distances 24:33, -74deg, score 25, shift -1422px,+3009px -->
-#		<!-- image 16<-->17: 12873 matches, distances 27:34, +20deg, score 14, shift -1701px,-1083px -->
-#		<!-- image 17<-->18: 12517 matches, distances 27:35, -131deg, score 10, shift +1031px,+5111px -->
-#		<!-- image 17<-->19: 12650 matches, distances 27:37, -36deg, score 11, shift -4589px,+4494px -->
-#
-# 2chan-kpcoverage2-liblinear:
-#
-# tegelikult peaks olema match (kuigi mitte tingimata õige):
-#	<!-- image 6<-->7: 12764 matches, distances 33:39, -174deg, score 10/0.12=84, shift -3251px,-3522px -->
-#	<!-- image 7<-->8: 12983 matches, distances 24:38, +0deg, score 0/1.00=0, shift +0px,+0px -->
