@@ -457,7 +457,7 @@ if testcase_fname:
 																							100.0/tries,
 							' '.join(map(str,best_params)),threshold_str)
 
-if len(positional_args) == 1:
+elif len(positional_args) == 1:
 	ImageKeypoints(positional_args[0]).show_img_with_keypoints(0)
 else:
 	print_matches_for_images(positional_args)
