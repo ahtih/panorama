@@ -321,13 +321,24 @@ if not positional_args:
 correct_matches=None
 testcase_fname=keyword_args.get('--testcase-fname')
 if testcase_fname:
-	correct_matches=set()
+	correct_matches=dict()
 
 	class kolor_xml_handler(xml.sax.handler.ContentHandler):
+		def __init__(self):
+			self.image_fnames=[]
+
 		def startElement(self,name,attrs):
 			global correct_matches
-			if name == 'match':
-				correct_matches.add((int(attrs.get('image1')),int(attrs.get('image2'))))
+
+			if name == 'def':
+				fname=attrs.get('filename')
+				for fname2 in self.image_fnames:
+					correct_matches[tuple(sorted((fname,fname2)))]=False
+				self.image_fnames.append(fname)
+			elif name == 'match':
+				img1=self.image_fnames[int(attrs.get('image1'))]
+				img2=self.image_fnames[int(attrs.get('image2'))]
+				correct_matches[tuple(sorted((img1,img2)))]=True
 
 	parser=xml.sax.make_parser()
 	parser.setContentHandler(kolor_xml_handler())
@@ -382,19 +393,30 @@ if len(positional_args) == 1:
 		nonzero_tries,nonzero_successes=0,0
 		correct_preditions_with_zero_score=0
 
+		image_fnames=[]
 		for line in open(positional_args[0],'r'):
+			if line.strip().endswith(' keypoints'):
+				image_fnames.append(line.partition(' ')[0].rpartition('/')[2])
+				continue
+
 			m=re.search(r'<!-- image ([0-9]+)<-->([0-9]+): .* ([-+]*[0-9.]+)deg, score ([0-9.]+)/[0-9.]+=([0-9.]+), shift ([-+]*[0-9.]+)px, *([-+]*[0-9.]+)px',line)
 			if not m:
 				continue
+
 			fields=m.groups()
-			match_idx=(int(fields[0]),int(fields[1]))
+			img_idx1=int(fields[0])
+			img_idx2=int(fields[1])
 			angle_deg=float(fields[2])
 			count=float(fields[3])
 			score=float(fields[4])
 			x_shift=int(fields[5])
 			y_shift=int(fields[6])
 
-			is_correct_match=(match_idx in correct_matches)
+			fnames_pair=tuple(sorted((image_fnames[img_idx1],image_fnames[img_idx2])))
+			is_correct_match=correct_matches.get(fnames_pair)
+			if is_correct_match is None:
+				print 'Warning: image pair %s %s not present in testcases' % fnames_pair
+				continue
 
 			if score > 0:
 				shift_ratio=calc_shift_ratio(x_shift,y_shift)
