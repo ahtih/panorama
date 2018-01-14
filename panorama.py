@@ -1,16 +1,20 @@
 #!/usr/bin/python
 # -*- encoding: latin-1 -*-
 
-import sys,math,operator,re,xml.sax.handler,xml.sax,numpy,cv2,matplotlib.pyplot
+import sys,math,operator,re,xml.sax.handler,xml.sax,gc,itertools,multiprocessing,numpy,cv2,matplotlib.pyplot
 import iterative_optimiser
 
-RESIZE_FACTOR=8
+RESIZE_FACTOR=4
+KEYPOINT_BLOCKS=5
 IMG_HISTOGRAM_SIZE=10
 
-detector_patch_size=31
-detector=cv2.ORB_create(nfeatures=500,patchSize=detector_patch_size)
+max_procs=8	#!!!
 
-bf_matcher=cv2.BFMatcher(cv2.NORM_HAMMING,crossCheck=True)
+detector_patch_size=31
+detector=cv2.ORB_create(nfeatures=1000,patchSize=detector_patch_size)
+
+keypoint_matcher=cv2.FlannBasedMatcher({'algorithm': 6, 'table_number': 6, 'key_size': 12,
+										'multi_probe_level': 1},{'checks': 50})
 clahe=cv2.createCLAHE(clipLimit=40,tileGridSize=(8,8))
 
 class ImageKeypoints:
@@ -39,10 +43,12 @@ class ImageKeypoints:
 			self.xys.extend(kp.xys)
 			return self
 
-	def __init__(self,fname):
+	def __init__(self,fname,deallocate_image=False):
 		self.img=cv2.imread(fname)
 		if RESIZE_FACTOR != 1:
 			self.img=cv2.resize(self.img,(0,0),fx=1.0 / RESIZE_FACTOR,fy=1.0 / RESIZE_FACTOR)
+
+		self.img_shape=tuple(self.img.shape)
 
 		# self.img=cv2.Laplacian(self.img,cv2.CV_8U,ksize=5)	# somewhat works
 		# self.img=cv2.Canny(self.img,10,20)
@@ -79,14 +85,19 @@ class ImageKeypoints:
 
 		print '%s %s keypoints' % (fname,'+'.join([str(len(chan.xys)) for chan in self.channels]))
 
+		if deallocate_image:
+			self.img=None
+
 	def add_channel(self,img):
+		global KEYPOINT_BLOCKS
+
 		if len(img.shape) >= 3:
 			img=cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
 
 		img=clahe.apply(img)
 
-		x_splits=tuple([i*img.shape[1]/5 for i in range(5+1)])
-		y_splits=tuple([i*img.shape[0]/5 for i in range(5+1)])
+		x_splits=tuple([i*img.shape[1]/KEYPOINT_BLOCKS for i in range(KEYPOINT_BLOCKS+1)])
+		y_splits=tuple([i*img.shape[0]/KEYPOINT_BLOCKS for i in range(KEYPOINT_BLOCKS+1)])
 
 		self.channels.append(ImageKeypoints.Keypoints())
 
@@ -109,8 +120,8 @@ def calc_shift_for_angle(img1,img2,matches,angle_deg):
 	angle_sin=math.sin(math.radians(angle_deg))
 	angle_cos=math.cos(math.radians(angle_deg))
 
-	img1_size=(img1.img.shape[1],img1.img.shape[0])
-	img2_size=(img2.img.shape[1],img2.img.shape[0])
+	img1_size=(img1.img_shape[1],img1.img_shape[0])
+	img2_size=(img2.img_shape[1],img2.img_shape[0])
 
 	histogram_bin_pixels=int(50 / RESIZE_FACTOR)
 
@@ -192,13 +203,14 @@ def calc_shift_ratio(xd,yd):
 	return min(abs_shifts) / float(max(1,max(abs_shifts)))
 
 def find_matches(img1,img2):
-	global bf_matcher
+	global keypoint_matcher
 
 	matches=[]
 	for chan1,chan2 in zip(img1.channels,img2.channels):
-		for m in bf_matcher.match(chan1.descriptors,chan2.descriptors):
-			matches.append((m.distance,	chan1.xys[m.queryIdx][0],chan1.xys[m.queryIdx][1],
-										chan2.xys[m.trainIdx][0],chan2.xys[m.trainIdx][1]))
+		for m,m2 in keypoint_matcher.knnMatch(chan1.descriptors,chan2.descriptors,k=2):
+			if m.distance < 0.8 * m2.distance:
+				matches.append((m.distance,	chan1.xys[m.queryIdx][0],chan1.xys[m.queryIdx][1],
+											chan2.xys[m.trainIdx][0],chan2.xys[m.trainIdx][1]))
 
 	matches.sort(key=operator.itemgetter(0))
 
@@ -246,7 +258,7 @@ def find_matches(img1,img2):
 	# homography_matrix=cv2.findHomography(src_pts,dst_pts,cv2.RANSAC,5.0)[0]
 	# print homography_matrix
 
-	max_dist=(img1.img.shape[0] + img1.img.shape[1]) / 50
+	max_dist=(img1.img_shape[0] + img1.img_shape[1]) / 50
 	representative_xy_pairs=[]
 	output_string=''
 	for i in best_inliers:
@@ -264,25 +276,40 @@ def find_matches(img1,img2):
 
 	return (debug_str,output_string)
 
-def print_matches_for_images(image_fnames):
-	images=[ImageKeypoints(fname) for fname in image_fnames]
+def worker_func(args):
+	try:
+		global images_with_keypoints
+		idx1,idx2=args
+		return args + tuple(find_matches(images_with_keypoints[idx1],images_with_keypoints[idx2]))
+	except KeyboardInterrupt:
+		return None
 
-	link_stats=[[] for img in images]
+def print_matches_for_images():
+	global max_procs,images_with_keypoints
 
-	for idx1,img1 in enumerate(images):
-		for idx2,img2 in enumerate(images):
-			if idx2 <= idx1:
-				continue
+	link_stats=[[] for img in images_with_keypoints]
 
-			debug_str,output_string=find_matches(img1,img2)
+	gc.collect()
+	worker_pool=multiprocessing.Pool(max_procs) if max_procs > 1 else None
 
-			print '        <!-- image %d<-->%d: %s -->' % (idx1,idx2,debug_str)
+	worker_args=[]
+	for idx1,img1 in enumerate(images_with_keypoints):
+		for idx2,img2 in enumerate(images_with_keypoints):
+			if idx2 > idx1:
+				worker_args.append((idx1,idx2))
+	if worker_pool is not None:
+		results=worker_pool.imap(worker_func,worker_args,5)		#!!! Try imap_unordered()
+	else:
+		results=itertools.imap(worker_func,worker_args)
 
-			if output_string:
-				print '        <match image1="%d" image2="%d">\n            <points>\n%s            </points>\n        </match>' % \
+	for idx1,idx2,debug_str,output_string in results:
+		print '        <!-- image %d<-->%d: %s -->' % (idx1,idx2,debug_str)
+
+		if output_string:
+			print '        <match image1="%d" image2="%d">\n            <points>\n%s            </points>\n        </match>' % \
 																				(idx1,idx2,output_string)
-				link_stats[idx1].append(idx2)
-				link_stats[idx2].append(idx1)
+			link_stats[idx1].append(idx2)
+			link_stats[idx2].append(idx1)
 
 	print 'Link stats:'
 
@@ -387,7 +414,7 @@ if testcase_fnames:
 				best_threshold=0.5 * (score + prev_score)
 				prev_score=score
 
-		return (best_correct_predictions,str(best_threshold))
+		return (best_correct_predictions,'%.3f' % (best_threshold,))
 
 	tries=0
 	nonzero_tries,nonzero_successes=0,0
@@ -426,10 +453,7 @@ if testcase_fnames:
 				if print_training_data:
 					print '%d 1:%s 2:%s 3:%s 4:%s' % training_data[-1]
 
-				decision_value=score - (100 + min(100,abs(angle_deg) * 3) + shift_ratio * 60)
-				decision_value=score*0.00726 + count*0.1049 + min(50,abs(angle_deg))*-0.0482 + (-1.885)		# trained for test-pano-2chan-kpcoverage2.mypoints
-				decision_value=score*-0.00017 + count*0.157 + min(50,abs(angle_deg))*-0.0372 + shift_ratio*-1.341 + (-2.595)		# trained for test-pano-2chan-resize8-kpcoverage2-liblinear.mypoints
-				# decision_value=score*0.02 + count*0.74 + min(50,abs(angle_deg))*-0.24 + shift_ratio*-0.38 + (-16.145447725)		# iterative_optimiser trained for test-pano-2chan-resize8-kpcoverage2-liblinear.mypoints
+				decision_value=score*0.02 + count*0.74 + min(50,abs(angle_deg))*-0.24 + shift_ratio*-0.38 + (-16.145447725)
 
 				predicted=(decision_value >= 0)
 				nonzero_successes+=int(predicted == is_correct_match)
@@ -465,7 +489,8 @@ if testcase_fnames:
 elif len(positional_args) == 1:
 	ImageKeypoints(positional_args[0]).show_img_with_keypoints(0)
 else:
-	print_matches_for_images(positional_args)
+	images_with_keypoints=[ImageKeypoints(fname,True) for fname in positional_args]
+	print_matches_for_images()
 
 # img1.show_img_with_keypoints([matches[xy_pair[4]].queryIdx for xy_pair in representative_xy_pairs])
 # if len(sys.argv) >= 1+3:
