@@ -85,7 +85,7 @@ class ImageKeypoints:
 				if keypoint_counts[x_idx][y_idx]:
 					self.histogram.append((x,y,keypoint_counts[x_idx][y_idx] / float(total_keypoints)))
 
-		print '%s %s keypoints' % (fname,'+'.join([str(len(chan.xys)) for chan in self.channels]))
+		self.channel_keypoints=tuple([len(chan.xys) for chan in self.channels])
 
 		if deallocate_image:
 			self.img=None
@@ -291,7 +291,7 @@ def worker_func(args):
 	except KeyboardInterrupt:
 		return None
 
-def print_matches_for_images():
+def print_matches_for_images(output_fd):
 	global max_procs,images_with_keypoints
 
 	link_stats=[[] for img in images_with_keypoints]
@@ -310,18 +310,18 @@ def print_matches_for_images():
 		results=itertools.imap(worker_func,worker_args)
 
 	for idx1,idx2,debug_str,output_string in results:
-		print '        <!-- image %d<-->%d: %s -->' % (idx1,idx2,debug_str)
+		print >>output_fd,'        <!-- image %d<-->%d: %s -->' % (idx1,idx2,debug_str)
 
 		if output_string:
-			print '        <match image1="%d" image2="%d">\n            <points>\n%s            </points>\n        </match>' % \
+			print >>output_fd,'        <match image1="%d" image2="%d">\n            <points>\n%s            </points>\n        </match>' % \
 																				(idx1,idx2,output_string)
 			link_stats[idx1].append(idx2)
 			link_stats[idx2].append(idx1)
 
-	print 'Link stats:'
+	print >>output_fd,'<!-- Link stats: -->'
 
 	for idx,linked_images in enumerate(link_stats):
-		print '#%d links: %s' % (idx,' '.join(map(str,linked_images)))
+		print >>output_fd,'<!-- #%d links: %s -->' % (idx,' '.join(map(str,linked_images)))
 
 keyword_args={}
 positional_args=[]
@@ -341,10 +341,10 @@ for arg in sys.argv[1:]:
 if not positional_args:
 	print '''Usage:
 	%s IMAGE-FNAME
-		Extract and show keypoints from one image
+		Extract and show keypoints from a single image
 
-	%s IMAGE-FNAME IMAGE-FNAME [IMAGE-FNAME ...]
-		Match a set of images to each other, and print out raw matches for an AutoPano XML file
+	%s [--output-fname=PANO-XML-FNAME] IMAGE-FNAME IMAGE-FNAME [IMAGE-FNAME ...]
+		Match a set of images to each other, and write the resulting AutoPano XML file to stdout or output file
 
 	%s --testcase-fname=PANO-XML-FNAME ... [--print-training-data] MATCHES-XML-FNAME ...
 		Optimise the matches classifier (decision_value formula) against testcases, using raw matches files as input''' % \
@@ -499,8 +499,64 @@ if testcase_fnames:
 elif len(positional_args) == 1:
 	ImageKeypoints(positional_args[0]).show_img_with_keypoints(0)
 else:
-	images_with_keypoints=[ImageKeypoints(fname,True) for fname in positional_args]
-	print_matches_for_images()
+	image_fnames=positional_args
+	images_with_keypoints=[ImageKeypoints(fname,True) for fname in image_fnames]
+
+	output_fd=sys.stdout
+	output_fname=keyword_args.get('--output-fname')
+	if output_fname:
+		output_fd=open(output_fname,'wt')
+
+	print >>output_fd,'''<?xml version="1.0" encoding="UTF-8"?>
+<pano>
+    <version filemodel="2.0" application="Autopano Pro 4.4.1" id="9"/>
+    <finalRender basename="%a" path="%p" fileType="jpg" fileCompression="8" fileDepth="8" interpolationMode="3" blendMode="2" outputPercent="100" overwrite="1" fileEmbedAll="0" removeAlpha="0" outputPanorama="1" outputLayers="0" outputPictures="0" multibandLevel="-2" alphaDiamond="0" exposureWeights="0" cutting="1" graphcutGhostFocal="0" bracketedGhost="0"/>
+    <optim>
+        <options automaticSteps="0" automaticSettings="0" focalHandling="-1" distoHandling="-1" offsetsHandling="-1" multipleVPHandling="0" yprScope="0" focalScope="2" distoScope="2" offsetScope="2" hScope="0" optLG="1" useGO="1" matrixLG="0" gridLG="0" optFinal1="1" optLens1="1" optLens2="1" stepGeomAnalysis="1" cleanPoints="0" cleanLinks="0" cbpMode="0" cbpThreshold="5" cbpLimit="50" cbpLinkThreshold="40" matLGMode="1" matLGRow="1" matLGStack="1" matLG360="0" matLGOverlapping="25" gaMode="0" calibratedRig="0"/>
+    </optim>
+    <colorCorrection eqMode="1" eqPerLayer="1" colorDtScaler="1"/>
+    <exposureWeighting enabled="0" tone="0.5" dark="0.5" light="0.5"/>
+    <projection fitMode="1" type="0">
+        <params/>
+    </projection>
+    <images>
+'''
+
+	for fname,img in zip(image_fnames,images_with_keypoints):
+		print >>output_fd,('<image><def filename="%s" lensModel="0" fisheyeRadius="0" fisheyeCoffX="0" ' +
+																'fisheyeCoffY="0"/></image>') % (fname,)
+		print >>output_fd,'<!-- %s %s keypoints -->' % (fname,'+'.join(map(str,img.channel_keypoints)))
+
+	print >>output_fd,'''
+    </images>
+    <layers>
+        <layer name="N_0" ouput="1">
+            <images>
+'''
+
+	for idx in range(len(images_with_keypoints)):
+		print >>output_fd,'                <image index="%d" preview="1" output="1"/>' % (idx,)
+
+	print >>output_fd,'''
+            </images>
+        </layer>
+    </layers>
+    <stacks>
+'''
+
+	for idx in range(len(images_with_keypoints)):
+		print >>output_fd,'        <stack>%d</stack>' % (idx,)
+
+	print >>output_fd,'''
+    </stacks>
+    <matches>
+'''
+	print_matches_for_images(output_fd)
+
+	print >>output_fd,'''
+    </matches>
+</pano>
+'''
 
 # img1.show_img_with_keypoints([matches[xy_pair[4]].queryIdx for xy_pair in representative_xy_pairs])
 # if len(sys.argv) >= 1+3:
