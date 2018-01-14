@@ -15,7 +15,9 @@ detector=cv2.ORB_create(nfeatures=1000,patchSize=detector_patch_size)
 
 keypoint_matcher=cv2.FlannBasedMatcher({'algorithm': 6, 'table_number': 6, 'key_size': 12,
 										'multi_probe_level': 1},{'checks': 50})
-clahe=cv2.createCLAHE(clipLimit=40,tileGridSize=(8,8))
+clahe=cv2.createCLAHE(clipLimit=40,tileGridSize=(16,16))
+
+classifier_params=(0.02,0.85,-0.15,-0.42,+7.821)
 
 class ImageKeypoints:
 	class Keypoints:
@@ -202,6 +204,12 @@ def calc_shift_ratio(xd,yd):
 	abs_shifts=(abs(xd),abs(yd))
 	return min(abs_shifts) / float(max(1,max(abs_shifts)))
 
+def calc_classifier_decision_value(inputs,params):
+	decision_value=sum(value*weight for value,weight in zip(inputs,params))
+	if len(params) > len(inputs):
+		decision_value-=params[-1]
+	return decision_value
+
 def find_matches(img1,img2):
 	global keypoint_matcher
 
@@ -247,9 +255,8 @@ def find_matches(img1,img2):
 	abs_shifts=(abs(best_xd),abs(best_yd))
 	shift_ratio=min(abs_shifts) / float(max(1,max(abs_shifts)))
 
-	decision_value=best_score - (100 + min(100,abs(best_angle_deg) * 3) + shift_ratio * 60)		#!!!
-	decision_value=best_score*0.00726 + best_count*0.1049 + abs(best_angle_deg)*-0.0482 + (-1.885)
-
+	decision_value=calc_classifier_decision_value(
+						(best_score,best_count,min(50,abs(best_angle_deg)),shift_ratio),classifier_params)
 	if decision_value < 0 or best_score <= 0:
 		return (debug_str,'')
 
@@ -389,7 +396,7 @@ if testcase_fnames:
 		scores=[]
 		total_correct_matches=0
 		for e in training_data:
-			scores.append((sum(value*weight for value,weight in zip(e[1:],params)),e[0]))
+			scores.append((calc_classifier_decision_value(e[1:],params),e[0]))
 			total_correct_matches+=int(bool(e[0]))
 
 		scores.sort()
@@ -414,7 +421,7 @@ if testcase_fnames:
 				best_threshold=0.5 * (score + prev_score)
 				prev_score=score
 
-		return (best_correct_predictions,'%.3f' % (best_threshold,))
+		return (best_correct_predictions,'%+.3f' % (best_threshold,))
 
 	tries=0
 	nonzero_tries,nonzero_successes=0,0
@@ -453,7 +460,8 @@ if testcase_fnames:
 				if print_training_data:
 					print '%d 1:%s 2:%s 3:%s 4:%s' % training_data[-1]
 
-				decision_value=score*0.02 + count*0.74 + min(50,abs(angle_deg))*-0.24 + shift_ratio*-0.38 + (-16.145447725)
+				decision_value=calc_classifier_decision_value(
+										(score,count,min(50,abs(angle_deg)),shift_ratio),classifier_params)
 
 				predicted=(decision_value >= 0)
 				nonzero_successes+=int(predicted == is_correct_match)
@@ -471,8 +479,10 @@ if testcase_fnames:
 	if not print_training_data and tries:
 		print 'Successes: %u/%u %.2f%% (nonzero links only)' % (nonzero_successes,nonzero_tries,
 																	nonzero_successes*100.0/nonzero_tries)
-		print 'Successes: %u/%u %.2f%%' % (nonzero_successes + correct_preditions_with_zero_score,
-								tries,(nonzero_successes + correct_preditions_with_zero_score)*100.0/tries)
+		print 'Successes: %u/%u %.2f%% (hardcoded params                %s and threshold %+.3f)' % (
+								nonzero_successes + correct_preditions_with_zero_score,
+								tries,(nonzero_successes + correct_preditions_with_zero_score)*100.0/tries,
+								' '.join(map(str,classifier_params[:-1])),classifier_params[-1])
 
 		# print 'Optimising with the following parameters:', \
 		#									' '.join(map(operator.itemgetter(0),optimiser_params))
