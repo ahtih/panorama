@@ -78,14 +78,17 @@ def delta_time(image_idx):
 panoramas=[]
 
 cur_panorama_start_idx=0
+cur_sphere_coverage_sum=0
 for idx,(timestamp,fname,tags,sphere_coverage) in enumerate(images):
 	print '#',idx,fname,delta_time(idx),sphere_coverage	#!!!
 
-	if idx < 1:
-		continue
-	if delta_time(idx) > 2*60:
-		panoramas.append((cur_panorama_start_idx,idx-1))
-		cur_panorama_start_idx=idx
+	if idx >= 1:
+		if delta_time(idx) > 90 * min(1.0,3.0 / max(0.01,cur_sphere_coverage_sum)):
+			panoramas.append((cur_panorama_start_idx,idx-1))
+			cur_panorama_start_idx=idx
+			cur_sphere_coverage_sum=0
+
+	cur_sphere_coverage_sum+=sphere_coverage
 
 panoramas.append((cur_panorama_start_idx,len(images)-1))
 
