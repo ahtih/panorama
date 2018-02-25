@@ -2,7 +2,7 @@
 # -*- encoding: latin-1 -*-
 
 import sys,math,operator,re,xml.sax.handler,xml.sax,gc,itertools,multiprocessing,numpy,cv2,matplotlib.pyplot
-import iterative_optimiser
+import iterative_optimiser,exif
 
 RESIZE_FACTOR=4
 KEYPOINT_BLOCKS=5
@@ -323,6 +323,18 @@ def print_matches_for_images(output_fd):
 	for idx,linked_images in enumerate(link_stats):
 		print >>output_fd,'<!-- #%d links: %s -->' % (idx,' '.join(map(str,linked_images)))
 
+def get_focal_length_35mm(fname):
+	tags=exif.read_exif(fname)
+	focal_length=exif.exif_focal_length(tags)
+	if focal_length is None or focal_length < 1e-6:
+		return None
+
+	sensor_x_mm,sensor_y_mm=exif.exif_sensor_size_mm(tags)
+
+	focal_multiplier=math.sqrt(36**2 + 24**2) / math.sqrt(sensor_x_mm**2 + sensor_y_mm**2)
+
+	return focal_length * focal_multiplier
+
 keyword_args={}
 positional_args=[]
 
@@ -523,8 +535,9 @@ else:
 '''
 
 	for fname,img in zip(image_fnames,images_with_keypoints):
-		print >>output_fd,('<image><def filename="%s" lensModel="0" fisheyeRadius="0" fisheyeCoffX="0" ' +
-																'fisheyeCoffY="0"/></image>') % (fname,)
+		print >>output_fd,('<image><def filename="%s" focal35mm="%.3f" lensModel="0" ' + \
+										'fisheyeRadius="0" fisheyeCoffX="0" fisheyeCoffY="0"/></image>') % \
+									(fname,get_focal_length_35mm(fname) or 0)
 		print >>output_fd,'<!-- %s %s keypoints -->' % (fname,'+'.join(map(str,img.channel_keypoints)))
 
 	print >>output_fd,'''
