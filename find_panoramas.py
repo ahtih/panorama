@@ -145,8 +145,10 @@ for panorama_idx,(start_idx,end_idx) in enumerate(panoramas):
 	# print start_idx,end_idx,nr_of_images,max_time_delta,sphere_coverage,images[start_idx][1],images[end_idx][1]
 
 	print 'echo %d..%d %d %.0fsec %.2f' % (start_idx,end_idx,nr_of_images,max_time_delta,sphere_coverage)
-	print './panorama.py --output-fname=panorama-%d.pano %s' % (panorama_idx,
-										' '.join([images[idx][1] for idx in range(start_idx,end_idx+1)]))
+
+	print './panorama.py --output-fname=panorama-%s.pano %s' % (
+							os.path.splitext(os.path.basename(images[start_idx][1]))[0].replace('IMG_',''),
+							' '.join([images[idx][1] for idx in range(start_idx,end_idx+1)]))
 
 #Image Model
 #EXIF ExposureTime
