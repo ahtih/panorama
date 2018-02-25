@@ -94,7 +94,7 @@ panoramas.append((cur_panorama_start_idx,len(images)-1))
 
 for panorama_idx in reversed(range(len(panoramas))):
 	if panoramas[panorama_idx][1] <= panoramas[panorama_idx][0]:
-		del panoramas[idx]
+		del panoramas[panorama_idx]
 
 def calc_panorama_data(start_idx,end_idx):
 	global images
