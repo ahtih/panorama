@@ -1,25 +1,17 @@
 #!/usr/bin/python
 
-import sys,math,operator,time,calendar,exifread
-
-exif_resolution_units_mm={2: 25.4, 3: 10}
+import sys,os,math,operator,time,calendar
+import exif
 
 images=[]
 
-def exif_to_float(exif_value):
-	if exif_value is None:
-		return None
-	exif_value=str(exif_value)
-	if '/' in exif_value:
-		fields=map(float,exif_value.split('/'))
-		return fields[0] / fields[1]
-	else:
-		return float(exif_value)
+if len(sys.argv) <= 1:
+	print 'Usage: find_panoramas.py IMAGE-FNAME ...'
+	print
+	exit(1)
 
 for fname in sys.argv[1:]:
-	fd=open(fname,'rb')
-	tags=exifread.process_file(fd,details=False)
-	fd.close()
+	tags=exif.read_exif(fname)
 
 #	for k,v in tags.items():
 #		value_str=str(v)
@@ -37,20 +29,9 @@ for fname in sys.argv[1:]:
 
 	fov_sq_deg=2506		# Assume 20mm focal length on APS-C sensor
 
-	focal_length=exif_to_float(tags.get('EXIF FocalLength'))
+	focal_length=exif.exif_focal_length(tags)
 	if focal_length is not None and focal_length > 1e-6:
-		sensor_x_mm=25.1	# Assume APS-C if no sensor size is specified
-		sensor_y_mm=16.7
-		resolution_unit_mm=exif_resolution_units_mm.get(
-												int(str(tags.get('EXIF FocalPlaneResolutionUnit','0'))))
-		x_res=exif_to_float(tags.get('EXIF FocalPlaneXResolution'))
-		y_res=exif_to_float(tags.get('EXIF FocalPlaneYResolution'))
-		x_size=exif_to_float(tags.get('EXIF ExifImageWidth'))
-		y_size=exif_to_float(tags.get('EXIF ExifImageLength'))
-		if resolution_unit_mm is not None and x_res is not None and y_res is not None and \
-									x_size is not None and y_size is not None and x_res > 0 and y_res > 0:
-			sensor_x_mm=resolution_unit_mm * x_size / x_res
-			sensor_y_mm=resolution_unit_mm * y_size / y_res
+		sensor_x_mm,sensor_y_mm=exif.exif_sensor_size_mm(tags)
 
 		x_degrees=math.degrees(2*math.atan(0.5*sensor_x_mm/focal_length))
 		y_degrees=math.degrees(2*math.atan(0.5*sensor_y_mm/focal_length))
