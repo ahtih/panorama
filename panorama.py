@@ -358,7 +358,7 @@ if not positional_args:
 	%s [--output-fname=PANO-XML-FNAME] IMAGE-FNAME IMAGE-FNAME [IMAGE-FNAME ...]
 		Match a set of images to each other, and write the resulting AutoPano XML file to stdout or output file
 
-	%s --testcase-fname=PANO-XML-FNAME ... [--print-training-data] MATCHES-XML-FNAME ...
+	%s --testcase-fname=PANO-XML-FNAME ... [--print-training-data] [--nowarn] MATCHES-XML-FNAME ...
 		Optimise the matches classifier (decision_value formula) against testcases, using raw matches files as input''' % \
 		((sys.argv[0],) * 3)
 
@@ -462,7 +462,8 @@ if testcase_fnames:
 			fnames_pair=tuple(sorted((image_fnames[img_idx1],image_fnames[img_idx2])))
 			is_correct_match=correct_matches.get(fnames_pair)
 			if is_correct_match is None:
-				print 'Warning: image pair %s %s not present in testcases' % fnames_pair
+				if '--nowarn' not in keyword_args:
+					print 'Warning: image pair %s %s not present in testcases' % fnames_pair
 				continue
 
 			if score > 0:
