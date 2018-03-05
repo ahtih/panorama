@@ -109,6 +109,21 @@ class ImageKeypoints:
 						x_splits[x_idx],min(img.shape[1],x_splits[x_idx+1] + 2*detector_patch_size),
 						y_splits[y_idx],min(img.shape[0],y_splits[y_idx+1] + 2*detector_patch_size))
 
+	def calc_keypoints_coverage(self,img2_size,angle_sin,angle_cos,x_add,y_add):
+		coverage_sum=0
+
+		for bin_x,bin_y,keypoints_coverage in self.histogram:
+			x=bin_x * angle_cos - bin_y * angle_sin + x_add
+			if x < 0 or x > img2_size[0]:
+				continue
+			y=bin_x * angle_sin + bin_y * angle_cos + y_add
+			if y < 0 or y > img2_size[1]:
+				continue
+
+			coverage_sum+=keypoints_coverage
+
+		return coverage_sum
+
 	def show_img_with_keypoints(self,channel_idx,highlight_indexes=tuple()):
 		for idx,xy in enumerate(self.channels[channel_idx].xys):
 			highlight=(idx in highlight_indexes)
@@ -152,19 +167,9 @@ def calc_shift_for_angle(img1,img2,matches,angle_deg):
 		if count < 5:
 			continue
 
-		img2_keypoints_coverage=0
-
-		for x2,y2,keypoints_coverage in img2.histogram:
-			x1=x2 * angle_cos - y2 * angle_sin + xd2_add + xd
-			if x1 < 0 or x1 > img1_size[0]:
-				continue
-			y1=x2 * angle_sin + y2 * angle_cos + yd2_add + yd
-			if y1 < 0 or y1 > img1_size[1]:
-				continue
-
-			img2_keypoints_coverage+=keypoints_coverage
-
-		img2_keypoints_coverage=max(0.1,img2_keypoints_coverage)
+		img2_keypoints_coverage=max(0.1,img2.calc_keypoints_coverage(img1_size,angle_sin,angle_cos,
+																	xd2_add + idx[0]*histogram_bin_pixels,
+																	yd2_add + idx[1]*histogram_bin_pixels))
 
 		# area_coverage=max(0.1,max(0,1 - abs(idx[0] * histogram_bin_pixels) / float(img2_size[0])) * \
 		#						max(0,1 - abs(idx[1] * histogram_bin_pixels) / float(img2_size[1])))
