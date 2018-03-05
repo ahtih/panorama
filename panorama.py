@@ -442,8 +442,8 @@ if testcase_fnames:
 	for matches_name in positional_args:
 		image_fnames=[]
 		for line in open(matches_name,'r'):
-			if line.strip().endswith(' keypoints'):
-				image_fnames.append(line.partition(' ')[0].rpartition('/')[2])
+			if line.strip().endswith(' keypoints') or line.strip().endswith(' keypoints -->'):
+				image_fnames.append(line.rpartition('/')[2].partition(' ')[0])
 				continue
 
 			m=re.search(r'<!-- image ([0-9]+)<-->([0-9]+): .* ([-+]*[0-9.]+)deg, score ([0-9.]+)/[0-9.]+=([0-9.]+), shift ([-+]*[0-9.]+)px, *([-+]*[0-9.]+)px',line)
