@@ -17,11 +17,11 @@ keypoint_matcher=cv2.FlannBasedMatcher({'algorithm': 6, 'table_number': 6, 'key_
 										'multi_probe_level': 1},{'checks': 50})
 clahe=cv2.createCLAHE(clipLimit=40,tileGridSize=(16,16))
 
-classifier_params=(0.01,0.88,-0.11,-0.22,+8.130)
+classifier_params=(0.02,0.77,-0.11,-0.39,+9.311)
 
 class ImageKeypoints:
 	class Keypoints:
-		def __init__(self,img=None,x1=None,x2=None,y1=None,y2=None):
+		def __init__(self,img=None,focal_length_pixels=None,x1=None,x2=None,y1=None,y2=None):
 			self.descriptors=None
 			self.xys=[]
 
@@ -31,9 +31,12 @@ class ImageKeypoints:
 			kp,self.descriptors=detector.detectAndCompute(img[y1:y2,x1:x2],None)
 
 			if self.descriptors is not None:
+				base_x=x1 - img.shape[1]/2.0
+				base_y=y1 - img.shape[0]/2.0
 				for keypoint in kp:
-					self.xys.append((	int(x1 + keypoint.pt[0]),
-										int(y1 + keypoint.pt[1])))
+					self.xys.append((
+								math.degrees(math.atan2(base_x + keypoint.pt[0],focal_length_pixels)),
+								math.degrees(math.atan2(base_y + keypoint.pt[1],focal_length_pixels))))
 
 		def __iadd__(self,kp):
 			if kp.descriptors is not None:
@@ -47,10 +50,24 @@ class ImageKeypoints:
 
 	def __init__(self,fname,deallocate_image=False):
 		self.img=cv2.imread(fname)
+		self.orig_img_shape=tuple(self.img.shape)[:2]
+
 		if RESIZE_FACTOR != 1:
 			self.img=cv2.resize(self.img,(0,0),fx=1.0 / RESIZE_FACTOR,fy=1.0 / RESIZE_FACTOR)
 
-		self.img_shape=tuple(self.img.shape)
+		tags=exif.read_exif(fname)
+		focal_length_mm=exif.exif_focal_length(tags)
+		if focal_length_mm is None or focal_length_mm < 1e-6:
+			focal_length_mm=20		# Assume 20mm lens by default
+
+		sensor_size_mm=exif.exif_sensor_size_mm(tags)
+
+		self.x_fov_deg=2 * math.degrees(math.atan2(sensor_size_mm[0] / 2.0,focal_length_mm))
+		self.y_fov_deg=2 * math.degrees(math.atan2(sensor_size_mm[1] / 2.0,focal_length_mm))
+
+		focal_length_ratio=focal_length_mm / float(sum(sensor_size_mm))
+		self.focal_length_orig_pixels   =sum(self.orig_img_shape      ) * focal_length_ratio
+		self.focal_length_resized_pixels=sum(tuple(self.img.shape)[:2]) * focal_length_ratio
 
 		# self.img=cv2.Laplacian(self.img,cv2.CV_8U,ksize=5)	# somewhat works
 		# self.img=cv2.Canny(self.img,10,20)
@@ -65,25 +82,27 @@ class ImageKeypoints:
 									128),
 							cv2.transform(r,numpy.array((0.5,)))))
 
-			##### Build self.histogram[] #####
+			##### Build self.coverage_areas[] #####
 
 		total_keypoints=0
 		keypoint_counts=[[0 for i in range(IMG_HISTOGRAM_SIZE)] for j in range(IMG_HISTOGRAM_SIZE)]
-		x_bin_size=(self.img.shape[1] + IMG_HISTOGRAM_SIZE/2) / IMG_HISTOGRAM_SIZE
-		y_bin_size=(self.img.shape[0] + IMG_HISTOGRAM_SIZE/2) / IMG_HISTOGRAM_SIZE
+		x_bin_size=self.x_fov_deg / float(IMG_HISTOGRAM_SIZE)
+		y_bin_size=self.y_fov_deg / float(IMG_HISTOGRAM_SIZE)
 		for chan in self.channels:
 			total_keypoints+=len(chan.xys)
-			for x,y in chan.xys:
-				keypoint_counts[min(IMG_HISTOGRAM_SIZE-1,x / x_bin_size)] \
-															[min(IMG_HISTOGRAM_SIZE-1,y / y_bin_size)]+=1
-
-		self.histogram=[]
+			for x_deg,y_deg in chan.xys:
+				keypoint_counts [max(0,min(IMG_HISTOGRAM_SIZE-1,int(math.floor(
+														(x_deg + self.x_fov_deg/2.0) / x_bin_size))))] \
+								[max(0,min(IMG_HISTOGRAM_SIZE-1,int(math.floor(
+														(y_deg + self.y_fov_deg/2.0) / y_bin_size))))]+=1
+		self.coverage_areas=[]
 		for x_idx in range(IMG_HISTOGRAM_SIZE):
-			x=(x_idx + 0.5) * x_bin_size
+			x_deg=(x_idx + 0.5) * x_bin_size - self.x_fov_deg/2.0
 			for y_idx in range(IMG_HISTOGRAM_SIZE):
-				y=(y_idx + 0.5) * y_bin_size
+				y_deg=(y_idx + 0.5) * y_bin_size - self.y_fov_deg/2.0
 				if keypoint_counts[x_idx][y_idx]:
-					self.histogram.append((x,y,keypoint_counts[x_idx][y_idx] / float(total_keypoints)))
+					self.coverage_areas.append((x_deg,y_deg,
+												keypoint_counts[x_idx][y_idx] / float(total_keypoints)))
 
 		self.channel_keypoints=tuple([len(chan.xys) for chan in self.channels])
 
@@ -105,19 +124,25 @@ class ImageKeypoints:
 
 		for x_idx in range(len(x_splits)-1):
 			for y_idx in range(len(y_splits)-1):
-				self.channels[-1]+=ImageKeypoints.Keypoints(img,
+				self.channels[-1]+=ImageKeypoints.Keypoints(img,self.focal_length_resized_pixels,
 						x_splits[x_idx],min(img.shape[1],x_splits[x_idx+1] + 2*detector_patch_size),
 						y_splits[y_idx],min(img.shape[0],y_splits[y_idx+1] + 2*detector_patch_size))
 
-	def calc_keypoints_coverage(self,img2_size,angle_sin,angle_cos,x_add,y_add):
+	def degrees_to_pixels(self,x_deg,y_deg):
+		return (int(self.orig_img_shape[1] / 2.0 + math.tan(math.radians(x_deg)) * \
+																			self.focal_length_orig_pixels),
+				int(self.orig_img_shape[0] / 2.0 + math.tan(math.radians(y_deg)) * \
+																			self.focal_length_orig_pixels))
+
+	def calc_keypoints_coverage(self,img2,angle_sin,angle_cos,x_add_deg,y_add_deg):
 		coverage_sum=0
 
-		for bin_x,bin_y,keypoints_coverage in self.histogram:
-			x=bin_x * angle_cos - bin_y * angle_sin + x_add
-			if x < 0 or x > img2_size[0]:
+		for area_x_deg,area_y_deg,keypoints_coverage in self.coverage_areas:
+			x=area_x_deg * angle_cos - area_y_deg * angle_sin + x_add_deg
+			if abs(x) > 0.5 * img2.x_fov_deg:
 				continue
-			y=bin_x * angle_sin + bin_y * angle_cos + y_add
-			if y < 0 or y > img2_size[1]:
+			y=area_x_deg * angle_sin + area_y_deg * angle_cos + y_add_deg
+			if abs(y) > 0.5 * img2.y_fov_deg:
 				continue
 
 			coverage_sum+=keypoints_coverage
@@ -125,10 +150,11 @@ class ImageKeypoints:
 		return coverage_sum
 
 	def show_img_with_keypoints(self,channel_idx,highlight_indexes=tuple()):
-		for idx,xy in enumerate(self.channels[channel_idx].xys):
+		for idx,xy_deg in enumerate(self.channels[channel_idx].xys):
 			highlight=(idx in highlight_indexes)
 			color=(255,0,0) if highlight else (0,255,0)
-			cv2.circle(self.img,xy,(15 if highlight else 10) / RESIZE_FACTOR,color,-1)
+			cv2.circle(self.img,self.degrees_to_pixels(*xy_deg),
+												(15 if highlight else 10) / RESIZE_FACTOR,color,-1)
 
 		matplotlib.pyplot.imshow(self.img)
 		matplotlib.pyplot.show()
@@ -137,23 +163,17 @@ def calc_shift_for_angle(img1,img2,matches,angle_deg):
 	angle_sin=math.sin(math.radians(angle_deg))
 	angle_cos=math.cos(math.radians(angle_deg))
 
-	img1_size=(img1.img_shape[1],img1.img_shape[0])
-	img2_size=(img2.img_shape[1],img2.img_shape[0])
-
-	histogram_bin_pixels=int(50 / RESIZE_FACTOR)
-
-	xd2_add=(1-angle_cos) * img2_size[0] + angle_sin * img2_size[1]
-	yd2_add=(1-angle_cos) * img2_size[1] - angle_sin * img2_size[0]
+	histogram_bin_degrees=0.7
 
 	xy_deltas=[]
 	histogram=dict()
 	for distance,x1,y1,x2,y2 in matches[:1000]:
-		xd=x1 - int(x2 * angle_cos - y2 * angle_sin + xd2_add)
-		yd=y1 - int(x2 * angle_sin + y2 * angle_cos + yd2_add)
+		xd=x1 - (x2 * angle_cos - y2 * angle_sin)
+		yd=y1 - (x2 * angle_sin + y2 * angle_cos)
 
-		# print 'ZZZ',xd*RESIZE_FACTOR,yd*RESIZE_FACTOR,distance
+		# print 'ZZZ',xd,yd,distance
 
-		idx=(xd / histogram_bin_pixels,yd / histogram_bin_pixels)
+		idx=(int(math.floor(xd / histogram_bin_degrees)),int(math.floor(yd / histogram_bin_degrees)))
 		xy_deltas.append((idx,xd,yd))
 
 		if idx not in histogram:
@@ -167,9 +187,8 @@ def calc_shift_for_angle(img1,img2,matches,angle_deg):
 		if count < 5:
 			continue
 
-		img2_keypoints_coverage=max(0.1,img2.calc_keypoints_coverage(img1_size,angle_sin,angle_cos,
-																	xd2_add + idx[0]*histogram_bin_pixels,
-																	yd2_add + idx[1]*histogram_bin_pixels))
+		img2_keypoints_coverage=max(0.1,img2.calc_keypoints_coverage(img1,angle_sin,angle_cos,
+											idx[0] * histogram_bin_degrees,idx[1] * histogram_bin_degrees))
 
 		# area_coverage=max(0.1,max(0,1 - abs(idx[0] * histogram_bin_pixels) / float(img2_size[0])) * \
 		#						max(0,1 - abs(idx[1] * histogram_bin_pixels) / float(img2_size[1])))
@@ -196,14 +215,14 @@ def calc_shift_for_angle(img1,img2,matches,angle_deg):
 			yd_sum+=yd
 			inliers.append(match_idx)
 
-	xd_sum*=RESIZE_FACTOR
-	yd_sum*=RESIZE_FACTOR
+	xd=xd_sum / float(len(inliers))
+	yd=yd_sum / float(len(inliers))
 
 	best_count+=len(inliers)
 
-	# print angle_deg,best_count,best_coverage,xd_sum/len(inliers),yd_sum/len(inliers)
+	# print angle_deg,best_count,best_coverage,xd,yd
 
-	return (best_count,best_coverage,inliers,xd_sum / len(inliers),yd_sum / len(inliers))
+	return (best_count,best_coverage,inliers,xd,yd)
 
 def calc_shift_ratio(xd,yd):
 	abs_shifts=(abs(xd),abs(yd))
@@ -255,7 +274,7 @@ def find_matches(img1,img2):
 			best_yd=yd
 			best_angle_deg=angle_deg
 
-	debug_str+=', %+ddeg, score %d/%.2f=%d, shift %+dpx,%+dpx' % (best_angle_deg,best_count,
+	debug_str+=', %+ddeg, score %d/%.2f=%d, shift %+.0fdeg,%+.0fdeg' % (best_angle_deg,best_count,
 															best_coverage,best_score,best_xd,best_yd)
 	abs_shifts=(abs(best_xd),abs(best_yd))
 	shift_ratio=min(abs_shifts) / float(max(1,max(abs_shifts)))
@@ -270,21 +289,23 @@ def find_matches(img1,img2):
 	# homography_matrix=cv2.findHomography(src_pts,dst_pts,cv2.RANSAC,5.0)[0]
 	# print homography_matrix
 
-	max_dist=(img1.img_shape[0] + img1.img_shape[1]) / 50
+	max_dist_square=((img1.x_fov_deg + img1.y_fov_deg) / 50.0) ** 2
 	representative_xy_pairs=[]
 	output_string=''
 	for i in best_inliers:
-		distance,x1,y1,x2,y2=matches[i]
+		xy=matches[i][1:3]
+
 		for xy_pair in representative_xy_pairs:
-			if (x1 - xy_pair[0])**2 + (y1 - xy_pair[1])**2 < max_dist*max_dist:
+			if (xy[0] - xy_pair[0])**2 + (xy[1] - xy_pair[1])**2 < max_dist_square:
 				break
 		else:
-			new_xy_pair=(x1,y1,x2,y2,i)
-			representative_xy_pairs.append(new_xy_pair)
+			representative_xy_pairs.append(xy + matches[i][3:] + (i,))
 			output_string+='                <point x1="%d" y1="%d" x2="%d" y2="%d"/>\n' % \
-												tuple([value*RESIZE_FACTOR for value in new_xy_pair[:4]])
+									(img1.degrees_to_pixels(*xy) + img2.degrees_to_pixels(*matches[i][3:]))
 			if len(representative_xy_pairs) >= 15:
 				break
+
+	# img1.show_img_with_keypoints([matches[xy_pair[4]].queryIdx for xy_pair in representative_xy_pairs])
 
 	return (debug_str,output_string)
 
@@ -451,7 +472,7 @@ if testcase_fnames:
 				image_fnames.append(line.rpartition('/')[2].partition(' ')[0])
 				continue
 
-			m=re.search(r'<!-- image ([0-9]+)<-->([0-9]+): .* ([-+]*[0-9.]+)deg, score ([0-9.]+)/[0-9.]+=([0-9.]+), shift ([-+]*[0-9.]+)px, *([-+]*[0-9.]+)px',line)
+			m=re.search(r'<!-- image ([0-9]+)<-->([0-9]+): .* ([-+]*[0-9.]+)deg, score ([0-9.]+)/[0-9.]+=([0-9.]+), shift ([-+]*[0-9.]+)deg, *([-+]*[0-9.]+)deg',line)
 			if not m:
 				continue
 
@@ -576,7 +597,3 @@ else:
     </matches>
 </pano>
 '''
-
-# img1.show_img_with_keypoints([matches[xy_pair[4]].queryIdx for xy_pair in representative_xy_pairs])
-# if len(sys.argv) >= 1+3:
-#	cv2.imwrite(sys.argv[3],img1.img)
