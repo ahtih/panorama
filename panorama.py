@@ -597,3 +597,11 @@ else:
     </matches>
 </pano>
 '''
+
+#################### AWS Lambda design ###################
+# 1. upload image files (JPG/PNG/etc) to S3
+# 2. submit processing tasks to DynamoDB
+#		* extract_image_keypoints (image file in S3 --> ImageKeypoints object in S3, write status to DynamoDB)
+# 3. when all extract_image_keypoints tasks are done, submit futher tasks to DynamoDB:
+#		* match_images (two ImageKeypoints objects in S3 --> match record in DynamoDB)
+# 4. when all tasks are done, read all match records from DynamoDB, run classifier and generate XML file
