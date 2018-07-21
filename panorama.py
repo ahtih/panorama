@@ -2,11 +2,14 @@
 # -*- encoding: latin-1 -*-
 
 import sys,math,operator,re,xml.sax.handler,xml.sax,gc,itertools,multiprocessing,numpy,cv2,matplotlib.pyplot
-import iterative_optimiser,exif
+import iterative_optimiser,exif,boto3,cPickle
 
 RESIZE_FACTOR=4
 KEYPOINT_BLOCKS=5
 IMG_HISTOGRAM_SIZE=10
+
+S3_PROFILE_NAME='panorama'
+S3_KEYPOINTS_BUCKET_NAME='image-keypoints'
 
 max_procs=8	#!!!
 
@@ -48,9 +51,15 @@ class ImageKeypoints:
 			self.xys.extend(kp.xys)
 			return self
 
-	def __init__(self,fname,deallocate_image=False):
+	def __init__(self,fname,deallocate_image=False,s3_bucket_name=None):
+		if s3_bucket_name is not None:
+			self.load_from_s3(s3_bucket_name,fname)
+			return
+
 		self.img=cv2.imread(fname)
 		self.orig_img_shape=tuple(self.img.shape)[:2]
+
+		self.focal_length_35mm=get_focal_length_35mm(fname)
 
 		if RESIZE_FACTOR != 1:
 			self.img=cv2.resize(self.img,(0,0),fx=1.0 / RESIZE_FACTOR,fy=1.0 / RESIZE_FACTOR)
@@ -158,6 +167,29 @@ class ImageKeypoints:
 
 		matplotlib.pyplot.imshow(self.img)
 		matplotlib.pyplot.show()
+
+	def save_to_s3(self,s3_bucket_name,fname):
+		obj_to_pickle=[self.focal_length_35mm,self.focal_length_orig_pixels,self.x_fov_deg,self.y_fov_deg,
+															self.orig_img_shape,self.coverage_areas] + \
+						[(chan.descriptors,chan.xys) for chan in self.channels]
+		pickle_result=cPickle.dumps(obj_to_pickle,-1)
+
+		s3=boto3.Session(profile_name=S3_PROFILE_NAME).resource('s3')
+		s3.Bucket(s3_bucket_name).put_object(Key=fname,Body=pickle_result)
+
+	def load_from_s3(self,s3_bucket_name,fname):
+		s3_bucket=boto3.Session(profile_name=S3_PROFILE_NAME).resource('s3').Bucket(s3_bucket_name)
+		obj_from_pickle=cPickle.loads(s3_bucket.Object(fname).get()['Body'].read())
+
+		self.focal_length_35mm,self.focal_length_orig_pixels,self.x_fov_deg,self.y_fov_deg, \
+												self.orig_img_shape,self.coverage_areas=obj_from_pickle[:6]
+		self.channels=[]
+		for pickled_channel in obj_from_pickle[6:]:
+			chan=ImageKeypoints.Keypoints()
+			chan.descriptors,chan.xys=pickled_channel
+			self.channels.append(chan)
+
+		self.channel_keypoints=tuple([len(chan.xys) for chan in self.channels])
 
 def calc_shift_for_angle(img1,img2,matches,angle_deg):
 	angle_sin=math.sin(math.radians(angle_deg))
@@ -536,10 +568,16 @@ if testcase_fnames:
 							' '.join(map(str,best_params)),threshold_str)
 
 elif len(positional_args) == 1:
-	ImageKeypoints(positional_args[0]).show_img_with_keypoints(0)
+	ikp=ImageKeypoints(positional_args[0])
+	if '--s3' in keyword_args:
+		ikp.save_to_s3(S3_KEYPOINTS_BUCKET_NAME,'img2.keypoints')
+	else:
+		ikp.show_img_with_keypoints(0)
 else:
 	image_fnames=positional_args
-	images_with_keypoints=[ImageKeypoints(fname,True) for fname in image_fnames]
+	s3_bucket_name=S3_KEYPOINTS_BUCKET_NAME if '--s3' in keyword_args else None
+
+	images_with_keypoints=[ImageKeypoints(fname,True,s3_bucket_name) for fname in image_fnames]
 
 	output_fd=sys.stdout
 	output_fname=keyword_args.get('--output-fname')
@@ -564,7 +602,7 @@ else:
 	for fname,img in zip(image_fnames,images_with_keypoints):
 		print >>output_fd,('<image><def filename="%s" focal35mm="%.3f" lensModel="0" ' + \
 										'fisheyeRadius="0" fisheyeCoffX="0" fisheyeCoffY="0"/></image>') % \
-									(fname,get_focal_length_35mm(fname) or 0)
+									(fname,img.focal_length_35mm or 0)
 		print >>output_fd,'<!-- %s %s keypoints -->' % (fname,'+'.join(map(str,img.channel_keypoints)))
 
 	print >>output_fd,'''
@@ -600,8 +638,28 @@ else:
 
 #################### AWS Lambda design ###################
 # 1. upload image files (JPG/PNG/etc) to S3
-# 2. submit processing tasks to DynamoDB
-#		* extract_image_keypoints (image file in S3 --> ImageKeypoints object in S3, write status to DynamoDB)
-# 3. when all extract_image_keypoints tasks are done, submit futher tasks to DynamoDB:
-#		* match_images (two ImageKeypoints objects in S3 --> match record in DynamoDB)
-# 4. when all tasks are done, read all match records from DynamoDB, run classifier and generate XML file
+# 2. invoke synchronous Lambda via AWS API Gateway
+#		* spawn_extract_image_keypoints_tasks
+#		* arguments:
+#			* S3 filenames
+#			* processing batch key (arbitrary string)
+#			* processing parameters
+#		* this does an async Invoke for each image
+#			* extract_image_keypoints (image file in S3 --> ImageKeypoints file in S3)
+#			* ImageKeypoints file in S3:
+#				* Object Key: processing batch key + '/' + S3 filename
+# 3. periodically poll S3 for ImageKeypoints files using List Objects with processing batch key as prefix
+#		* https://docs.aws.amazon.com/AmazonS3/latest/API/v2-RESTBucketGET.html
+# 4. when all ImageKeypoints files are in S3, submit futher synchronous Lambda via AWS API Gateway:
+#		* spawn_match_images_tasks
+#		* this does an async Invoke for each image pair
+#			* match_images (two ImageKeypoints objects in S3 --> match record in DynamoDB)
+#			* match record in DynamoDB:
+#				* partition key: processing batch key
+#				* sort key: S3 filename + '_' + S3 filename
+#				* attributes:
+#					* debug_str: str
+#					* points:
+#						x1, y1, x2, y2: int
+# 5. periodically poll DyanamoDB using Query with partition key until all match records are in DynamoDB
+# 6. read all match records from DynamoDB, run classifier and generate XML file
