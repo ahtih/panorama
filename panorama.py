@@ -1,17 +1,15 @@
-#!/usr/bin/python
 # -*- encoding: latin-1 -*-
 
-import sys,math,operator,re,xml.sax.handler,xml.sax,gc,itertools,multiprocessing,numpy,cv2,matplotlib.pyplot
-import iterative_optimiser,exif,boto3,cPickle
+import math,operator,cPickle,decimal,numpy,cv2,exif,boto3
 
 RESIZE_FACTOR=4
 KEYPOINT_BLOCKS=5
 IMG_HISTOGRAM_SIZE=10
 
-S3_PROFILE_NAME='panorama'
 S3_KEYPOINTS_BUCKET_NAME='image-keypoints'
+DYNAMODB_TABLE_NAME='panorama-match-records'
 
-max_procs=8	#!!!
+aws_session=None
 
 detector_patch_size=31
 detector=cv2.ORB_create(nfeatures=1000,patchSize=detector_patch_size)
@@ -51,9 +49,9 @@ class ImageKeypoints:
 			self.xys.extend(kp.xys)
 			return self
 
-	def __init__(self,fname,deallocate_image=False,s3_bucket_name=None):
-		if s3_bucket_name is not None:
-			self.load_from_s3(s3_bucket_name,fname)
+	def __init__(self,fname,deallocate_image=False,from_s3=False):
+		if from_s3:
+			self.load_from_s3(fname)
 			return
 
 		self.img=cv2.imread(fname)
@@ -164,21 +162,21 @@ class ImageKeypoints:
 			color=(255,0,0) if highlight else (0,255,0)
 			cv2.circle(self.img,self.degrees_to_pixels(*xy_deg),
 												(15 if highlight else 10) / RESIZE_FACTOR,color,-1)
-
+		import matplotlib.pyplot
 		matplotlib.pyplot.imshow(self.img)
 		matplotlib.pyplot.show()
 
-	def save_to_s3(self,s3_bucket_name,fname):
+	def save_to_s3(self,fname):
 		obj_to_pickle=[self.focal_length_35mm,self.focal_length_orig_pixels,self.x_fov_deg,self.y_fov_deg,
 															self.orig_img_shape,self.coverage_areas] + \
 						[(chan.descriptors,chan.xys) for chan in self.channels]
 		pickle_result=cPickle.dumps(obj_to_pickle,-1)
 
-		s3=boto3.Session(profile_name=S3_PROFILE_NAME).resource('s3')
-		s3.Bucket(s3_bucket_name).put_object(Key=fname,Body=pickle_result)
+		s3=aws_session.resource('s3')
+		s3.Bucket(S3_KEYPOINTS_BUCKET_NAME).put_object(Key=fname,Body=pickle_result)
 
-	def load_from_s3(self,s3_bucket_name,fname):
-		s3_bucket=boto3.Session(profile_name=S3_PROFILE_NAME).resource('s3').Bucket(s3_bucket_name)
+	def load_from_s3(self,fname):
+		s3_bucket=aws_session.resource('s3').Bucket(S3_KEYPOINTS_BUCKET_NAME)
 		obj_from_pickle=cPickle.loads(s3_bucket.Object(fname).get()['Body'].read())
 
 		self.focal_length_35mm,self.focal_length_orig_pixels,self.x_fov_deg,self.y_fov_deg, \
@@ -279,9 +277,10 @@ def find_matches(img1,img2):
 	matches.sort(key=operator.itemgetter(0))
 
 	debug_str='%d matches' % len(matches)
+	matched_points=[]
 
 	if not matches:
-		return (debug_str,'')
+		return (debug_str,matched_points)
 
 	debug_str+=', distances %.0f:%.0f' % (matches[0][0],matches[:30][-1][0])
 
@@ -314,7 +313,7 @@ def find_matches(img1,img2):
 	decision_value=calc_classifier_decision_value(
 						(best_score,best_count,min(50,abs(best_angle_deg)),shift_ratio),classifier_params)
 	if decision_value < 0 or best_score <= 0:
-		return (debug_str,'')
+		return (debug_str,matched_points)
 
 	# src_pts=numpy.float32([(x1,y1) for distance,x1,y1,x2,y2 in matches[:1000]]).reshape(-1,1,2)
 	# dst_pts=numpy.float32([(x2,y2) for distance,x1,y1,x2,y2 in matches[:1000]]).reshape(-1,1,2)
@@ -323,7 +322,6 @@ def find_matches(img1,img2):
 
 	max_dist_square=((img1.x_fov_deg + img1.y_fov_deg) / 50.0) ** 2
 	representative_xy_pairs=[]
-	output_string=''
 	for i in best_inliers:
 		xy=matches[i][1:3]
 
@@ -332,54 +330,32 @@ def find_matches(img1,img2):
 				break
 		else:
 			representative_xy_pairs.append(xy + matches[i][3:] + (i,))
-			output_string+='                <point x1="%d" y1="%d" x2="%d" y2="%d"/>\n' % \
-									(img1.degrees_to_pixels(*xy) + img2.degrees_to_pixels(*matches[i][3:]))
+			matched_points.append((img1.degrees_to_pixels(*xy) + img2.degrees_to_pixels(*matches[i][3:])))
 			if len(representative_xy_pairs) >= 15:
 				break
 
 	# img1.show_img_with_keypoints([matches[xy_pair[4]].queryIdx for xy_pair in representative_xy_pairs])
 
-	return (debug_str,output_string)
+	return (debug_str,matched_points)
 
-def worker_func(args):
-	try:
-		global images_with_keypoints
-		idx1,idx2=args
-		return args + tuple(find_matches(images_with_keypoints[idx1],images_with_keypoints[idx2]))
-	except KeyboardInterrupt:
-		return None
+def process_match_and_write_to_dynamodb(processing_batch_key,s3_fname1,s3_fname2):
+	img1=ImageKeypoints(s3_fname1,False,S3_KEYPOINTS_BUCKET_NAME)
+	img2=ImageKeypoints(s3_fname2,False,S3_KEYPOINTS_BUCKET_NAME)
 
-def print_matches_for_images(output_fd):
-	global max_procs,images_with_keypoints
+	debug_str,matched_points=find_matches(img1,img2)
 
-	link_stats=[[] for img in images_with_keypoints]
+	item={'processing_batch_key': processing_batch_key,
+			's3_filenames': s3_fname1 + '_' + s3_fname2,
+			'debug_str': debug_str,
+			'img1_focal_length_35mm': decimal.Decimal(str(img1.focal_length_35mm)),
+			'img2_focal_length_35mm': decimal.Decimal(str(img2.focal_length_35mm)),
+			'img1_channel_keypoints': list(img1.channel_keypoints),
+			'img2_channel_keypoints': list(img2.channel_keypoints),
+			'matched_points': map(list,matched_points)
+			}
 
-	gc.collect()
-	worker_pool=multiprocessing.Pool(max_procs) if max_procs > 1 else None
-
-	worker_args=[]
-	for idx1,img1 in enumerate(images_with_keypoints):
-		for idx2,img2 in enumerate(images_with_keypoints):
-			if idx2 > idx1:
-				worker_args.append((idx1,idx2))
-	if worker_pool is not None:
-		results=worker_pool.imap(worker_func,worker_args,5)		#!!! Try imap_unordered()
-	else:
-		results=itertools.imap(worker_func,worker_args)
-
-	for idx1,idx2,debug_str,output_string in results:
-		print >>output_fd,'        <!-- image %d<-->%d: %s -->' % (idx1,idx2,debug_str)
-
-		if output_string:
-			print >>output_fd,'        <match image1="%d" image2="%d">\n            <points>\n%s            </points>\n        </match>' % \
-																				(idx1,idx2,output_string)
-			link_stats[idx1].append(idx2)
-			link_stats[idx2].append(idx1)
-
-	print >>output_fd,'<!-- Link stats: -->'
-
-	for idx,linked_images in enumerate(link_stats):
-		print >>output_fd,'<!-- #%d links: %s -->' % (idx,' '.join(map(str,linked_images)))
+	table=aws_session.resource('dynamodb').Table(DYNAMODB_TABLE_NAME)
+	table.put_item(Item=item)
 
 def get_focal_length_35mm(fname):
 	tags=exif.read_exif(fname)
@@ -393,273 +369,7 @@ def get_focal_length_35mm(fname):
 
 	return focal_length * focal_multiplier
 
-keyword_args={}
-positional_args=[]
+def init_aws_session(profile_name=None):
+	global aws_session
 
-for arg in sys.argv[1:]:
-	if arg.startswith('--'):
-		keyword,_,value=arg.partition('=')
-		if keyword not in keyword_args:
-			keyword_args[keyword]=value
-		else:
-			if not isinstance(keyword_args[keyword],list):
-				keyword_args[keyword]=[keyword_args[keyword],]
-			keyword_args[keyword].append(value)
-	else:
-		positional_args.append(arg)
-
-if not positional_args:
-	print '''Usage:
-	%s IMAGE-FNAME
-		Extract and show keypoints from a single image
-
-	%s [--output-fname=PANO-XML-FNAME] IMAGE-FNAME IMAGE-FNAME [IMAGE-FNAME ...]
-		Match a set of images to each other, and write the resulting AutoPano XML file to stdout or output file
-
-	%s --testcase-fname=PANO-XML-FNAME ... [--print-training-data] [--nowarn] MATCHES-XML-FNAME ...
-		Optimise the matches classifier (decision_value formula) against testcases, using raw matches files as input''' % \
-		((sys.argv[0],) * 3)
-
-	exit(1)
-
-correct_matches=None
-testcase_fnames=keyword_args.get('--testcase-fname')
-if testcase_fnames:
-	if not isinstance(testcase_fnames,list):
-		testcase_fnames=(testcase_fnames,)
-
-	correct_matches=dict()
-
-	class kolor_xml_handler(xml.sax.handler.ContentHandler):
-		def __init__(self):
-			self.image_fnames=[]
-
-		def startElement(self,name,attrs):
-			global correct_matches
-
-			if name == 'def':
-				fname=attrs.get('filename')
-				for fname2 in self.image_fnames:
-					correct_matches[tuple(sorted((fname,fname2)))]=False
-				self.image_fnames.append(fname)
-			elif name == 'match':
-				img1=self.image_fnames[int(attrs.get('image1'))]
-				img2=self.image_fnames[int(attrs.get('image2'))]
-				correct_matches[tuple(sorted((img1,img2)))]=True
-
-	for testcase_fname in testcase_fnames:
-		parser=xml.sax.make_parser()
-		parser.setContentHandler(kolor_xml_handler())
-		parser.parse(open(testcase_fname,'r'))
-
-	print_training_data=('--print-training-data' in keyword_args)
-	training_data=[]
-	optimiser_params=(('score',iterative_optimiser.FloatParam(0,1)),
-					('count',iterative_optimiser.FloatParam(0,1)),
-					('angle_deg_limit50',iterative_optimiser.FloatParam(-1,0)),
-					('shift_ratio',iterative_optimiser.FloatParam(-1,0)),
-					)
-
-	def optimiser_test_func(params):
-		global training_data
-
-		scores=[]
-		total_correct_matches=0
-		for e in training_data:
-			scores.append((calc_classifier_decision_value(e[1:],params),e[0]))
-			total_correct_matches+=int(bool(e[0]))
-
-		scores.sort()
-
-		best_correct_predictions=0
-		best_threshold=0
-
-		# print
-
-		cumulative_correct_matches=0
-		prev_score=None
-		for idx,(score,is_correct_match) in enumerate(scores):
-			correct_predictions_at_this_threshold=(idx - cumulative_correct_matches) + \
-													(total_correct_matches - cumulative_correct_matches)
-			# print idx,is_correct_match,cumulative_correct_matches,total_correct_matches,correct_predictions_at_this_threshold,score
-
-			cumulative_correct_matches+=int(bool(is_correct_match))
-			if correct_predictions_at_this_threshold > best_correct_predictions:
-				best_correct_predictions=correct_predictions_at_this_threshold
-				if prev_score is None:
-					prev_score=score
-				best_threshold=0.5 * (score + prev_score)
-				prev_score=score
-
-		return (best_correct_predictions,'%+.3f' % (best_threshold,))
-
-	tries=0
-	nonzero_tries,nonzero_successes=0,0
-	correct_preditions_with_zero_score=0
-
-	for matches_name in positional_args:
-		image_fnames=[]
-		for line in open(matches_name,'r'):
-			if line.strip().endswith(' keypoints') or line.strip().endswith(' keypoints -->'):
-				image_fnames.append(line.rpartition('/')[2].partition(' ')[0])
-				continue
-
-			m=re.search(r'<!-- image ([0-9]+)<-->([0-9]+): .* ([-+]*[0-9.]+)deg, score ([0-9.]+)/[0-9.]+=([0-9.]+), shift ([-+]*[0-9.]+)deg, *([-+]*[0-9.]+)deg',line)
-			if not m:
-				continue
-
-			fields=m.groups()
-			img_idx1=int(fields[0])
-			img_idx2=int(fields[1])
-			angle_deg=float(fields[2])
-			count=float(fields[3])
-			score=float(fields[4])
-			x_shift=int(fields[5])
-			y_shift=int(fields[6])
-
-			fnames_pair=tuple(sorted((image_fnames[img_idx1],image_fnames[img_idx2])))
-			is_correct_match=correct_matches.get(fnames_pair)
-			if is_correct_match is None:
-				if '--nowarn' not in keyword_args:
-					print 'Warning: image pair %s %s not present in testcases' % fnames_pair
-				continue
-
-			if score > 0:
-				shift_ratio=calc_shift_ratio(x_shift,y_shift)
-				training_data.append((int(is_correct_match),score,count,min(50,abs(angle_deg)),shift_ratio))
-
-				if print_training_data:
-					print '%d 1:%s 2:%s 3:%s 4:%s' % training_data[-1]
-
-				decision_value=calc_classifier_decision_value(
-										(score,count,min(50,abs(angle_deg)),shift_ratio),classifier_params)
-
-				predicted=(decision_value >= 0)
-				nonzero_successes+=int(predicted == is_correct_match)
-				nonzero_tries+=1
-			else:
-				predicted=False
-				decision_value=-1.11111
-				correct_preditions_with_zero_score+=int(not is_correct_match)
-
-			tries+=1
-
-			if not print_training_data and predicted != is_correct_match:
-				print is_correct_match,decision_value,line.strip()
-
-	if not print_training_data and tries:
-		print 'Successes: %u/%u %.2f%% (nonzero links only)' % (nonzero_successes,nonzero_tries,
-																	nonzero_successes*100.0/nonzero_tries)
-		print 'Successes: %u/%u %.2f%% (hardcoded params                %s and threshold %+.3f)' % (
-								nonzero_successes + correct_preditions_with_zero_score,
-								tries,(nonzero_successes + correct_preditions_with_zero_score)*100.0/tries,
-								' '.join(map(str,classifier_params[:-1])),classifier_params[-1])
-
-		# print 'Optimising with the following parameters:', \
-		#									' '.join(map(operator.itemgetter(0),optimiser_params))
-		best_params=iterative_optimiser.optimise([p[1] for p in optimiser_params],
-																			optimiser_test_func,30,False)
-		iterative_optimiser_successes,threshold_str=optimiser_test_func(best_params)
-		print 'Successes: %u/%u %.2f%% (iterative_optimiser with params %s and threshold %s)' % \
-							(iterative_optimiser_successes + correct_preditions_with_zero_score,
-							tries,
-							(iterative_optimiser_successes + correct_preditions_with_zero_score) * \
-																							100.0/tries,
-							' '.join(map(str,best_params)),threshold_str)
-
-elif len(positional_args) == 1:
-	ikp=ImageKeypoints(positional_args[0])
-	if '--s3' in keyword_args:
-		ikp.save_to_s3(S3_KEYPOINTS_BUCKET_NAME,'img2.keypoints')
-	else:
-		ikp.show_img_with_keypoints(0)
-else:
-	image_fnames=positional_args
-	s3_bucket_name=S3_KEYPOINTS_BUCKET_NAME if '--s3' in keyword_args else None
-
-	images_with_keypoints=[ImageKeypoints(fname,True,s3_bucket_name) for fname in image_fnames]
-
-	output_fd=sys.stdout
-	output_fname=keyword_args.get('--output-fname')
-	if output_fname:
-		output_fd=open(output_fname,'wt')
-
-	print >>output_fd,'''<?xml version="1.0" encoding="UTF-8"?>
-<pano>
-    <version filemodel="2.0" application="Autopano Pro 4.4.1" id="9"/>
-    <finalRender basename="%a" path="%p" fileType="jpg" fileCompression="5" fileDepth="8" interpolationMode="3" blendMode="2" outputPercent="100" overwrite="1" fileEmbedAll="0" removeAlpha="0" outputPanorama="1" outputLayers="0" outputPictures="0" multibandLevel="-2" alphaDiamond="0" exposureWeights="0" cutting="1" graphcutGhostFocal="0" bracketedGhost="0"/>
-    <optim>
-        <options automaticSteps="0" automaticSettings="0" focalHandling="-1" distoHandling="-1" offsetsHandling="-1" multipleVPHandling="0" yprScope="0" focalScope="2" distoScope="2" offsetScope="2" hScope="0" optLG="1" useGO="1" matrixLG="0" gridLG="0" optFinal1="1" optLens1="1" optLens2="1" stepGeomAnalysis="1" cleanPoints="0" cleanLinks="0" cbpMode="0" cbpThreshold="5" cbpLimit="50" cbpLinkThreshold="40" matLGMode="1" matLGRow="1" matLGStack="1" matLG360="0" matLGOverlapping="25" gaMode="0" calibratedRig="0"/>
-    </optim>
-    <colorCorrection eqMode="1" eqPerLayer="1" colorDtScaler="1"/>
-    <exposureWeighting enabled="0" tone="0.5" dark="0.5" light="0.5"/>
-    <projection fitMode="1" type="0">
-        <params/>
-    </projection>
-    <images>
-'''
-
-	for fname,img in zip(image_fnames,images_with_keypoints):
-		print >>output_fd,('<image><def filename="%s" focal35mm="%.3f" lensModel="0" ' + \
-										'fisheyeRadius="0" fisheyeCoffX="0" fisheyeCoffY="0"/></image>') % \
-									(fname,img.focal_length_35mm or 0)
-		print >>output_fd,'<!-- %s %s keypoints -->' % (fname,'+'.join(map(str,img.channel_keypoints)))
-
-	print >>output_fd,'''
-    </images>
-    <layers>
-        <layer name="N_0" ouput="1">
-            <images>
-'''
-
-	for idx in range(len(images_with_keypoints)):
-		print >>output_fd,'                <image index="%d" preview="1" output="1"/>' % (idx,)
-
-	print >>output_fd,'''
-            </images>
-        </layer>
-    </layers>
-    <stacks>
-'''
-
-	for idx in range(len(images_with_keypoints)):
-		print >>output_fd,'        <stack>%d</stack>' % (idx,)
-
-	print >>output_fd,'''
-    </stacks>
-    <matches>
-'''
-	print_matches_for_images(output_fd)
-
-	print >>output_fd,'''
-    </matches>
-</pano>
-'''
-
-#################### AWS Lambda design ###################
-# 1. upload image files (JPG/PNG/etc) to S3
-# 2. invoke synchronous Lambda via AWS API Gateway
-#		* spawn_extract_image_keypoints_tasks
-#		* arguments:
-#			* S3 filenames
-#			* processing batch key (arbitrary string)
-#			* processing parameters
-#		* this does an async Invoke for each image
-#			* extract_image_keypoints (image file in S3 --> ImageKeypoints file in S3)
-#			* ImageKeypoints file in S3:
-#				* Object Key: processing batch key + '/' + S3 filename
-# 3. periodically poll S3 for ImageKeypoints files using List Objects with processing batch key as prefix
-#		* https://docs.aws.amazon.com/AmazonS3/latest/API/v2-RESTBucketGET.html
-# 4. when all ImageKeypoints files are in S3, submit futher synchronous Lambda via AWS API Gateway:
-#		* spawn_match_images_tasks
-#		* this does an async Invoke for each image pair
-#			* match_images (two ImageKeypoints objects in S3 --> match record in DynamoDB)
-#			* match record in DynamoDB:
-#				* partition key: processing batch key
-#				* sort key: S3 filename + '_' + S3 filename
-#				* attributes:
-#					* debug_str: str
-#					* points:
-#						x1, y1, x2, y2: int
-# 5. periodically poll DyanamoDB using Query with partition key until all match records are in DynamoDB
-# 6. read all match records from DynamoDB, run classifier and generate XML file
+	aws_session=boto3.Session(profile_name=profile_name)
