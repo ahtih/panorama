@@ -4,10 +4,14 @@
 import sys,os.path,random,json,boto3,panorama
 
 def get_match_results(processing_batch_key):
-	table=panorama.aws_session.resource('dynamodb').Table(panorama.DYNAMODB_TABLE_NAME)
-	query_result=table.query(KeyConditionExpression=boto3.dynamodb.conditions.Key('processing_batch_key').
+	try:
+		table=panorama.aws_session.resource('dynamodb').Table(panorama.DYNAMODB_TABLE_NAME)
+		query_result=table.query(KeyConditionExpression=boto3.dynamodb.conditions.Key('processing_batch_key').
 																				eq(processing_batch_key),
 								ConsistentRead=False)
+	except socket.error:
+		return tuple()
+
 	return query_result.get('Items',tuple())
 
 def write_output_file(match_results,output_fname=None):
