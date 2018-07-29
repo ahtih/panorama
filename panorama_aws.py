@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- encoding: latin-1 -*-
 
-import sys,os.path,random,boto3,panorama
+import sys,os.path,random,json,boto3,panorama
 
 keyword_args={}
 positional_args=[]
@@ -84,8 +84,27 @@ else:
 	processing_batch_key='%016x' % (random.randint(0,2**64-1),)
 	print 'Creating processing batch %s with %u images' % (processing_batch_key,len(image_fnames))
 
+	s3_fnames=[]
+
 	for fname in image_fnames:
 		print 'Processing',fname
 		img=panorama.ImageKeypoints(fname,True)
 		print '   ','+'.join(map(str,img.channel_keypoints))
-		img.save_to_s3(processing_batch_key + '/' + os.path.basename(fname))
+
+		s3_fname=processing_batch_key + '/' + os.path.basename(fname)
+		img.save_to_s3(s3_fname)
+		s3_fnames.append(s3_fname)
+
+	print 'Spawning match_images Lambda tasks'
+
+	lambda_client=panorama.aws_session.client('lambda')
+
+	lambda_parameters={'function': 'spawn_match_images_tasks',
+								'processing_batch_key': processing_batch_key,
+								's3_fnames': s3_fnames}
+	invoke_result=lambda_client.invoke(FunctionName='panorama',InvocationType='RequestResponse',
+										Payload=json.dumps(lambda_parameters))
+	status_code=invoke_result.get('StatusCode')
+
+	if status_code < 200 or status_code > 299:
+		print 'Lambda invoke failed with:',invoke_result
