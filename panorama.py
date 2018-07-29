@@ -1,6 +1,6 @@
 # -*- encoding: latin-1 -*-
 
-import math,operator,cPickle,decimal,numpy,cv2,exif,boto3
+import sys,math,operator,cPickle,decimal,numpy,cv2,exif,boto3
 
 RESIZE_FACTOR=4
 KEYPOINT_BLOCKS=5
@@ -347,6 +347,8 @@ def process_match_and_write_to_dynamodb(processing_batch_key,s3_fname1,s3_fname2
 	item={'processing_batch_key': processing_batch_key,
 			's3_filenames': s3_fname1 + '_' + s3_fname2,
 			'debug_str': debug_str,
+			'img1_s3_fname': s3_fname1,
+			'img2_s3_fname': s3_fname2,
 			'img1_focal_length_35mm': decimal.Decimal(str(img1.focal_length_35mm)),
 			'img2_focal_length_35mm': decimal.Decimal(str(img2.focal_length_35mm)),
 			'img1_channel_keypoints': list(img1.channel_keypoints),
@@ -373,3 +375,56 @@ def init_aws_session(profile_name=None):
 	global aws_session
 
 	aws_session=boto3.Session(profile_name=profile_name)
+
+def write_output_file_header(output_fd,images):
+	print >>output_fd,'''<?xml version="1.0" encoding="UTF-8"?>
+<pano>
+    <version filemodel="2.0" application="Autopano Pro 4.4.1" id="9"/>
+    <finalRender basename="%a" path="%p" fileType="jpg" fileCompression="5" fileDepth="8" interpolationMode="3" blendMode="2" outputPercent="100" overwrite="1" fileEmbedAll="0" removeAlpha="0" outputPanorama="1" outputLayers="0" outputPictures="0" multibandLevel="-2" alphaDiamond="0" exposureWeights="0" cutting="1" graphcutGhostFocal="0" bracketedGhost="0"/>
+    <optim>
+        <options automaticSteps="0" automaticSettings="0" focalHandling="-1" distoHandling="-1" offsetsHandling="-1" multipleVPHandling="0" yprScope="0" focalScope="2" distoScope="2" offsetScope="2" hScope="0" optLG="1" useGO="1" matrixLG="0" gridLG="0" optFinal1="1" optLens1="1" optLens2="1" stepGeomAnalysis="1" cleanPoints="0" cleanLinks="0" cbpMode="0" cbpThreshold="5" cbpLimit="50" cbpLinkThreshold="40" matLGMode="1" matLGRow="1" matLGStack="1" matLG360="0" matLGOverlapping="25" gaMode="0" calibratedRig="0"/>
+    </optim>
+    <colorCorrection eqMode="1" eqPerLayer="1" colorDtScaler="1"/>
+    <exposureWeighting enabled="0" tone="0.5" dark="0.5" light="0.5"/>
+    <projection fitMode="1" type="0">
+        <params/>
+    </projection>
+    <images>
+'''
+
+	for fname,focal_length_35mm,channel_keypoints in images:
+		print >>output_fd,('<image><def filename="%s" focal35mm="%.3f" lensModel="0" ' + \
+										'fisheyeRadius="0" fisheyeCoffX="0" fisheyeCoffY="0"/></image>') % \
+									(fname,focal_length_35mm or 0)
+		print >>output_fd,'<!-- %s %s keypoints -->' % (fname,'+'.join(map(str,channel_keypoints)))
+
+	print >>output_fd,'''
+    </images>
+    <layers>
+        <layer name="N_0" ouput="1">
+            <images>
+'''
+
+	for idx in range(len(images)):
+		print >>output_fd,'                <image index="%d" preview="1" output="1"/>' % (idx,)
+
+	print >>output_fd,'''
+            </images>
+        </layer>
+    </layers>
+    <stacks>
+'''
+
+	for idx in range(len(images)):
+		print >>output_fd,'        <stack>%d</stack>' % (idx,)
+
+	print >>output_fd,'''
+    </stacks>
+    <matches>
+'''
+
+def write_output_file_footer(output_fd):
+	print >>output_fd,'''
+    </matches>
+</pano>
+'''
