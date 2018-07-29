@@ -18,7 +18,7 @@ keypoint_matcher=cv2.FlannBasedMatcher({'algorithm': 6, 'table_number': 6, 'key_
 										'multi_probe_level': 1},{'checks': 50})
 clahe=cv2.createCLAHE(clipLimit=40,tileGridSize=(16,16))
 
-classifier_params=(0.02,0.77,-0.11,-0.39,+9.311)
+classifier_params=(0.04,0.88,-0.23,-0.51,+8.332)
 
 class ImageKeypoints:
 	class Keypoints:
