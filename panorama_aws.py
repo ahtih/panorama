@@ -32,12 +32,13 @@ if '--output-batch' in keyword_args:
 	images=[]
 	fname_to_idx={}
 	for match_result in match_results:
-		fname=match_result.get('img1_s3_fname')
-		if not fname or fname in fname_to_idx:
-			continue
-		fname_to_idx[fname]=len(images)
-		images.append((fname,float(match_result['img1_focal_length_35mm']),
-														map(int,match_result['img1_channel_keypoints'])))
+		for key_prefix in ('img1_','img2_'):
+			fname=match_result.get(key_prefix + 's3_fname')
+			if not fname or fname in fname_to_idx:
+				continue
+			fname_to_idx[fname]=len(images)
+			images.append((fname,float(match_result[key_prefix + 'focal_length_35mm']),
+													map(int,match_result[key_prefix + 'channel_keypoints'])))
 
 	output_fname=keyword_args.get('--output-fname')
 	output_fd=sys.stdout
