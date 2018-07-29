@@ -53,6 +53,10 @@ def print_matches_for_images(output_fd):
 	for idx,linked_images in enumerate(link_stats):
 		print >>output_fd,'<!-- #%d links: %s -->' % (idx,' '.join(map(str,linked_images)))
 
+def calc_shift_ratio(xd,yd):
+	abs_shifts=(abs(xd),abs(yd))
+	return min(abs_shifts) / float(max(1,max(abs_shifts)))
+
 keyword_args={}
 positional_args=[]
 
@@ -129,7 +133,7 @@ if testcase_fnames:
 		scores=[]
 		total_correct_matches=0
 		for e in training_data:
-			scores.append((calc_classifier_decision_value(e[1:],params),e[0]))
+			scores.append((panorama.calc_classifier_decision_value(e[1:],params),e[0]))
 			total_correct_matches+=int(bool(e[0]))
 
 		scores.sort()
@@ -194,9 +198,9 @@ if testcase_fnames:
 				if print_training_data:
 					print '%d 1:%s 2:%s 3:%s 4:%s' % training_data[-1]
 
-				decision_value=calc_classifier_decision_value(
-										(score,count,min(50,abs(angle_deg)),shift_ratio),classifier_params)
-
+				decision_value=panorama.calc_classifier_decision_value(
+													(score,count,min(50,abs(angle_deg)),shift_ratio),
+													panorama.classifier_params)
 				predicted=(decision_value >= 0)
 				nonzero_successes+=int(predicted == is_correct_match)
 				nonzero_tries+=1
@@ -214,9 +218,9 @@ if testcase_fnames:
 		print 'Successes: %u/%u %.2f%% (nonzero links only)' % (nonzero_successes,nonzero_tries,
 																	nonzero_successes*100.0/nonzero_tries)
 		print 'Successes: %u/%u %.2f%% (hardcoded params                %s and threshold %+.3f)' % (
-								nonzero_successes + correct_predictions_with_zero_score,
-								tries,(nonzero_successes + correct_predictions_with_zero_score)*100.0/tries,
-								' '.join(map(str,classifier_params[:-1])),classifier_params[-1])
+						nonzero_successes + correct_predictions_with_zero_score,
+						tries,(nonzero_successes + correct_predictions_with_zero_score)*100.0/tries,
+						' '.join(map(str,panorama.classifier_params[:-1])),panorama.classifier_params[-1])
 
 		# print 'Optimising with the following parameters:', \
 		#									' '.join(map(operator.itemgetter(0),optimiser_params))

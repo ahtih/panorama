@@ -254,10 +254,6 @@ def calc_shift_for_angle(img1,img2,matches,angle_deg):
 
 	return (best_count,best_coverage,inliers,xd,yd)
 
-def calc_shift_ratio(xd,yd):
-	abs_shifts=(abs(xd),abs(yd))
-	return min(abs_shifts) / float(max(1,max(abs_shifts)))
-
 def calc_classifier_decision_value(inputs,params):
 	decision_value=sum(value*weight for value,weight in zip(inputs,params))
 	if len(params) > len(inputs):
