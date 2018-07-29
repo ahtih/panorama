@@ -3,32 +3,14 @@
 
 import sys,os.path,random,json,boto3,panorama
 
-keyword_args={}
-positional_args=[]
-
-for arg in sys.argv[1:]:
-	if arg.startswith('--'):
-		keyword,_,value=arg.partition('=')
-		if keyword not in keyword_args:
-			keyword_args[keyword]=value
-		else:
-			if not isinstance(keyword_args[keyword],list):
-				keyword_args[keyword]=[keyword_args[keyword],]
-			keyword_args[keyword].append(value)
-	else:
-		positional_args.append(arg)
-
-panorama.init_aws_session(positional_args[0])
-
-if '--output-batch' in keyword_args:
-	processing_batch_key=keyword_args['--output-batch']
+def get_match_results(processing_batch_key):
 	table=panorama.aws_session.resource('dynamodb').Table(panorama.DYNAMODB_TABLE_NAME)
 	query_result=table.query(KeyConditionExpression=boto3.dynamodb.conditions.Key('processing_batch_key').
 																				eq(processing_batch_key),
 								ConsistentRead=False)
-	match_results=query_result.get('Items',tuple())
-	print len(match_results)	#!!!
+	return query_result.get('Items',tuple())
 
+def write_output_file(match_results,output_fname=None):
 	images=[]
 	fname_to_idx={}
 	for match_result in match_results:
@@ -40,7 +22,6 @@ if '--output-batch' in keyword_args:
 			images.append((fname,float(match_result[key_prefix + 'focal_length_35mm']),
 													map(int,match_result[key_prefix + 'channel_keypoints'])))
 
-	output_fname=keyword_args.get('--output-fname')
 	output_fd=sys.stdout
 	if output_fname:
 		output_fd=open(output_fname,'wt')
@@ -75,9 +56,30 @@ if '--output-batch' in keyword_args:
 
 	panorama.write_output_file_footer(output_fd)
 
-elif '--match-batch' in keyword_args:
-	processing_batch_key=keyword_args['--match-batch']
-	#!!!
+keyword_args={}
+positional_args=[]
+
+for arg in sys.argv[1:]:
+	if arg.startswith('--'):
+		keyword,_,value=arg.partition('=')
+		if keyword not in keyword_args:
+			keyword_args[keyword]=value
+		else:
+			if not isinstance(keyword_args[keyword],list):
+				keyword_args[keyword]=[keyword_args[keyword],]
+			keyword_args[keyword].append(value)
+	else:
+		positional_args.append(arg)
+
+panorama.init_aws_session(positional_args[0])
+
+if '--output-batch' in keyword_args:
+	processing_batch_key=keyword_args['--output-batch']
+
+	match_results=get_match_results(processing_batch_key)
+	print 'Got %d pairwise image match results' % (len(match_results),)
+
+	write_output_file(match_results,keyword_args.get('--output-fname'))
 else:
 	image_fnames=positional_args[1:]
 
@@ -108,3 +110,17 @@ else:
 
 	if status_code < 200 or status_code > 299:
 		print 'Lambda invoke failed with:',invoke_result
+		exit(1)
+
+	expected_nr_of_match_results=len(s3_fnames) * (len(s3_fnames)-1) / 2
+	prev_printed_status=0
+
+	while True:
+		match_results=get_match_results(processing_batch_key)
+		if len(match_results) >= expected_nr_of_match_results:
+			break
+		if len(match_results) != prev_printed_status:
+			print 'Completed %d of %d pairwise matches' % (len(match_results),expected_nr_of_match_results)
+			prev_printed_status=len(match_results)
+
+	write_output_file(match_results,keyword_args.get('--output-fname'))
