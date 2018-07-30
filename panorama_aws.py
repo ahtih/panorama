@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- encoding: latin-1 -*-
 
-import sys,os.path,random,json,boto3,panorama
+import sys,os.path,random,json,socket,boto3,panorama
 
 def get_match_results(processing_batch_key):
 	try:
