@@ -121,15 +121,27 @@ while panorama_idx < len(panoramas):
 			continue
 	panorama_idx+=1
 
+non_panorama_image_indexes=set(range(len(images)))
+
 for panorama_idx,(start_idx,end_idx) in enumerate(panoramas):
 	nr_of_images,sphere_coverage,max_time_delta=calc_panorama_data(start_idx,end_idx)
 	# print start_idx,end_idx,nr_of_images,max_time_delta,sphere_coverage,images[start_idx][1],images[end_idx][1]
+
+	if sphere_coverage < 0.5:
+		continue
 
 	print 'echo %d..%d %d %.0fsec %.2f' % (start_idx,end_idx,nr_of_images,max_time_delta,sphere_coverage)
 
 	print './panorama.py --output-fname=panorama-%s.pano %s' % (
 							os.path.splitext(os.path.basename(images[start_idx][1]))[0].replace('IMG_',''),
 							' '.join([images[idx][1] for idx in range(start_idx,end_idx+1)]))
+	non_panorama_image_indexes-=frozenset(range(start_idx,end_idx+1))
+
+if non_panorama_image_indexes:
+	print
+	print 'echo Probable non-panorama images:'
+	for idx in sorted(non_panorama_image_indexes):
+		print 'echo',images[idx][1]
 
 #Image Model
 #EXIF ExposureTime
