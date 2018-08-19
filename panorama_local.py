@@ -75,7 +75,7 @@ def read_lowlevel_matches_from_file(fname):
 
 		fnames_pair=tuple(sorted((image_fnames[img_idx1],image_fnames[img_idx2])))
 
-		yield (fnames_pair,angle_deg,count,score,x_shift,y_shift)
+		yield (fnames_pair,line.strip(),angle_deg,count,score,x_shift,y_shift)
 
 keyword_args={}
 positional_args=[]
@@ -185,7 +185,7 @@ if testcase_fnames:
 	correct_predictions_with_zero_score=0
 
 	for matches_name in positional_args:
-		for fnames_pair,angle_deg,count,score,x_shift,y_shift in \
+		for fnames_pair,line,angle_deg,count,score,x_shift,y_shift in \
 															read_lowlevel_matches_from_file(matches_name):
 			is_correct_match=correct_matches.get(tuple(sorted(fnames_pair)))
 			if is_correct_match is None:
@@ -194,15 +194,15 @@ if testcase_fnames:
 				continue
 
 			if score > 0:
-				shift_ratio=panorama.calc_shift_ratio(x_shift,y_shift)
-				training_data.append((int(is_correct_match),score,count,min(50,abs(angle_deg)),shift_ratio))
+				classifier_input=(score,count,min(50,abs(angle_deg)),
+																panorama.calc_shift_ratio(x_shift,y_shift))
+				training_data.append((int(is_correct_match),) + classifier_input)
 
 				if print_training_data:
 					print '%d 1:%s 2:%s 3:%s 4:%s' % training_data[-1]
 
-				decision_value=panorama.calc_classifier_decision_value(
-													(score,count,min(50,abs(angle_deg)),shift_ratio),
-													panorama.classifier_params)
+				decision_value=panorama.calc_classifier_decision_value(classifier_input,
+																				panorama.classifier_params)
 				predicted=(decision_value >= 0)
 				nonzero_successes+=int(predicted == is_correct_match)
 				nonzero_tries+=1
@@ -214,7 +214,7 @@ if testcase_fnames:
 			tries+=1
 
 			if not print_training_data and predicted != is_correct_match:
-				print is_correct_match,decision_value,line.strip()
+				print is_correct_match,decision_value,line
 
 	if not print_training_data and tries:
 		print 'Successes: %u/%u %.2f%% (nonzero links only)' % (nonzero_successes,nonzero_tries,
