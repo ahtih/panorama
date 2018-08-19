@@ -53,9 +53,29 @@ def print_matches_for_images(output_fd):
 	for idx,linked_images in enumerate(link_stats):
 		print >>output_fd,'<!-- #%d links: %s -->' % (idx,' '.join(map(str,linked_images)))
 
-def calc_shift_ratio(xd,yd):
-	abs_shifts=(abs(xd),abs(yd))
-	return min(abs_shifts) / float(max(1,max(abs_shifts)))
+def read_lowlevel_matches_from_file(fname):
+	image_fnames=[]
+	for line in open(fname,'r'):
+		if line.strip().endswith(' keypoints') or line.strip().endswith(' keypoints -->'):
+			image_fnames.append(line.rpartition('/')[2].partition(' ')[0])
+			continue
+
+		m=re.search(r'<!-- image ([0-9]+)<-->([0-9]+): .* ([-+]*[0-9.]+)deg, score ([0-9.]+)/[0-9.]+=([0-9.]+), shift ([-+]*[0-9.]+)deg, *([-+]*[0-9.]+)deg',line)
+		if not m:
+			continue
+
+		fields=m.groups()
+		img_idx1=int(fields[0])
+		img_idx2=int(fields[1])
+		angle_deg=float(fields[2])
+		count=float(fields[3])
+		score=float(fields[4])
+		x_shift=int(fields[5])
+		y_shift=int(fields[6])
+
+		fnames_pair=tuple(sorted((image_fnames[img_idx1],image_fnames[img_idx2])))
+
+		yield (fnames_pair,angle_deg,count,score,x_shift,y_shift)
 
 keyword_args={}
 positional_args=[]
@@ -165,34 +185,16 @@ if testcase_fnames:
 	correct_predictions_with_zero_score=0
 
 	for matches_name in positional_args:
-		image_fnames=[]
-		for line in open(matches_name,'r'):
-			if line.strip().endswith(' keypoints') or line.strip().endswith(' keypoints -->'):
-				image_fnames.append(line.rpartition('/')[2].partition(' ')[0])
-				continue
-
-			m=re.search(r'<!-- image ([0-9]+)<-->([0-9]+): .* ([-+]*[0-9.]+)deg, score ([0-9.]+)/[0-9.]+=([0-9.]+), shift ([-+]*[0-9.]+)deg, *([-+]*[0-9.]+)deg',line)
-			if not m:
-				continue
-
-			fields=m.groups()
-			img_idx1=int(fields[0])
-			img_idx2=int(fields[1])
-			angle_deg=float(fields[2])
-			count=float(fields[3])
-			score=float(fields[4])
-			x_shift=int(fields[5])
-			y_shift=int(fields[6])
-
-			fnames_pair=tuple(sorted((image_fnames[img_idx1],image_fnames[img_idx2])))
-			is_correct_match=correct_matches.get(fnames_pair)
+		for fnames_pair,angle_deg,count,score,x_shift,y_shift in \
+															read_lowlevel_matches_from_file(matches_name):
+			is_correct_match=correct_matches.get(tuple(sorted(fnames_pair)))
 			if is_correct_match is None:
 				if '--nowarn' not in keyword_args:
-					print 'Warning: image pair %s %s not present in testcases' % fnames_pair
+					print 'Warning: image pair %s %s not present in testcases' % tuple(fnames_pair)
 				continue
 
 			if score > 0:
-				shift_ratio=calc_shift_ratio(x_shift,y_shift)
+				shift_ratio=panorama.calc_shift_ratio(x_shift,y_shift)
 				training_data.append((int(is_correct_match),score,count,min(50,abs(angle_deg)),shift_ratio))
 
 				if print_training_data:

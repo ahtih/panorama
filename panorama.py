@@ -260,6 +260,10 @@ def calc_classifier_decision_value(inputs,params):
 		decision_value-=params[-1]
 	return decision_value
 
+def calc_shift_ratio(xd,yd):
+	abs_shifts=(abs(xd),abs(yd))
+	return min(abs_shifts) / float(max(1,max(abs_shifts)))
+
 def find_matches(img1,img2):
 	global keypoint_matcher
 
@@ -303,8 +307,7 @@ def find_matches(img1,img2):
 
 	debug_str+=', %+ddeg, score %d/%.2f=%d, shift %+.0fdeg,%+.0fdeg' % (best_angle_deg,best_count,
 															best_coverage,best_score,best_xd,best_yd)
-	abs_shifts=(abs(best_xd),abs(best_yd))
-	shift_ratio=min(abs_shifts) / float(max(1,max(abs_shifts)))
+	shift_ratio=calc_shift_ratio(best_xd,best_yd)
 
 	decision_value=calc_classifier_decision_value(
 						(best_score,best_count,min(50,abs(best_angle_deg)),shift_ratio),classifier_params)
