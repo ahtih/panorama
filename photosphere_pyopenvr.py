@@ -128,7 +128,7 @@ def load_image(fname):
 		coeff=MAX_IMG_SIZE / float(max(im.size))
 		new_size=[]
 		for value in im.size:
-			new_size.append(min(MAX_IMG_SIZE,int(value*coeff)))
+			new_size.append(min(MAX_IMG_SIZE,int(value*coeff + 0.5)))
 
 		print 'Resizing image from %dx%d to %dx%d' % (tuple(im.size) + tuple(new_size))
 		im=im.resize(new_size,Image.ANTIALIAS)
@@ -138,12 +138,14 @@ def load_image(fname):
 if __name__ == "__main__":
 	import sys
 
-	images=[load_image(fname) for fname in sys.argv[1:]]
+	fnames=sys.argv[1:]
 	cur_image_idx=0
 
-	# numpy.save('test',images[0])
+	img=load_image(fnames[cur_image_idx])
 
-	actor=SphericalPanorama(images[cur_image_idx])
+	# numpy.save('test',img)
+
+	actor=SphericalPanorama(img)
 	renderer=openvr.gl_renderer.OpenVrGlRenderer(actor)
 
 	with openvr.glframework.glfw_app.GlfwApp(renderer,'Photosphere') as app:
@@ -203,14 +205,18 @@ if __name__ == "__main__":
 							break
 						if controller_state.ulButtonPressed & (1 << openvr.k_EButton_SteamVR_Touchpad):
 							cur_image_idx+=(-1 if controller_state.rAxis[0].x < 0 else +1)
-							cur_image_idx%=len(images)
-							actor.image=images[cur_image_idx]
+							cur_image_idx%=len(fnames)
+							actor.image=load_image(fnames[cur_image_idx])
 							actor.set_texture_from_image()
 							print 'actor.set_texture_from_image() call done'
+						else:
+							print 'some other button pressed'
+							# print renderer.compositor.forceReconnectProcess()	#!!!
+							# print 'forceReconnectProcess() done'
 
 			frames_displayed+=1
 			if (frames_displayed % 50) == 0 and frames_displayed:
-				# print getposes_time		#!!!!
+				# print getposes_time		#!!!
 				cur_time=time.time()
 
 				time_passed=cur_time - last_print_time
