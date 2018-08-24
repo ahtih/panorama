@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- encoding: latin-1 -*-
 
-import sys,operator,re,xml.sax.handler,xml.sax,gc,itertools,multiprocessing
+import sys,operator,re,os.path,xml.sax.handler,xml.sax,gc,itertools,multiprocessing
 import panorama,iterative_optimiser
 
 max_procs=8	#!!!
@@ -116,23 +116,26 @@ if testcase_fnames:
 		testcase_fnames=(testcase_fnames,)
 
 	correct_matches=dict()
+	basename_correct_matches=dict()
 
 	class kolor_xml_handler(xml.sax.handler.ContentHandler):
 		def __init__(self):
 			self.image_fnames=[]
 
 		def startElement(self,name,attrs):
-			global correct_matches
+			global correct_matches,basename_correct_matches
 
 			if name == 'def':
 				fname=attrs.get('filename')
 				for fname2 in self.image_fnames:
-					correct_matches[tuple(sorted((fname,fname2)))]=False
+					img_fnames=(fname,fname2)
+					correct_matches[tuple(sorted(img_fnames))]=False
+					basename_correct_matches[tuple(sorted(map(os.path.basename,img_fnames)))]=False
 				self.image_fnames.append(fname)
 			elif name == 'match':
-				img1=self.image_fnames[int(attrs.get('image1'))]
-				img2=self.image_fnames[int(attrs.get('image2'))]
-				correct_matches[tuple(sorted((img1,img2)))]=True
+				img_fnames=[self.image_fnames[int(attrs.get(attr))] for attr in ('image1','image2')]
+				correct_matches[tuple(sorted(img_fnames))]=True
+				basename_correct_matches[tuple(sorted(map(os.path.basename,img_fnames)))]=True
 
 	for testcase_fname in testcase_fnames:
 		parser=xml.sax.make_parser()
@@ -188,6 +191,9 @@ if testcase_fnames:
 		for fnames_pair,line,angle_deg,count,score,x_shift,y_shift in \
 															read_lowlevel_matches_from_file(matches_name):
 			is_correct_match=correct_matches.get(tuple(sorted(fnames_pair)))
+			if is_correct_match is None:
+				is_correct_match=basename_correct_matches.get(tuple(sorted(fnames_pair)))
+
 			if is_correct_match is None:
 				if '--nowarn' not in keyword_args:
 					print 'Warning: image pair %s %s not present in testcases' % tuple(fnames_pair)
