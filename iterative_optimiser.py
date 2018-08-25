@@ -19,7 +19,8 @@ class FloatParam:
 			self.digits_after_comma=3
 
 		self.change_coeff_multiplier=(self.max_value - self.min_value) / float(2*MAX_CHANGE_COEFF)
-		self.min_change_coeff=(0.1 ** self.digits_after_comma) / self.change_coeff_multiplier
+		if self.max_value > self.min_value:
+			self.min_change_coeff=(0.1 ** self.digits_after_comma) / self.change_coeff_multiplier
 
 		self.format_string='%%.%df' % (max(0,self.digits_after_comma))
 
