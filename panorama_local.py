@@ -3,7 +3,6 @@
 
 import sys,operator,re,os.path,xml.sax.handler,xml.sax,gc,itertools,multiprocessing
 import panorama,iterative_optimiser
-from quaternion import Quaternion
 
 max_procs=8	#!!!
 
@@ -41,7 +40,7 @@ def print_matches_for_images(output_fd):
 	else:
 		results=itertools.imap(worker_func,worker_args)
 
-	panorama.write_output_file_matches(output_fd,results,len(images_with_keypoints))
+	panorama.write_output_file_matches(output_fd,list(results),len(images_with_keypoints))
 
 def read_lowlevel_matches_from_file(fname):
 	image_fnames=[]
@@ -66,20 +65,6 @@ def read_lowlevel_matches_from_file(fname):
 		fnames_pair=tuple(sorted((image_fnames[img_idx1],image_fnames[img_idx2])))
 
 		yield (fnames_pair,line.strip(),angle_deg,count,score,x_shift,y_shift)
-
-def quaternion_from_match_angles(angle_deg,x_shift,y_shift):
-	# Output quaternion coordinate system is such that X points ahead, Y left, Z up
-	x=Quaternion.from_single_axis_angle_deg(0,-angle_deg)
-	y=Quaternion.from_single_axis_angle_deg(1,-y_shift)
-	z=Quaternion.from_single_axis_angle_deg(2,+x_shift)
-	return y*z*x		#!!! Probably in correct order
-
-def quaternion_from_kolor_file(yaw_rad,pitch_rad,roll_rad):
-	# Output quaternion coordinate system is such that X points ahead, Y left, Z up
-	x=Quaternion.from_single_axis_angle(0,-roll_rad)
-	y=Quaternion.from_single_axis_angle(1,+pitch_rad)
-	z=Quaternion.from_single_axis_angle(2,+yaw_rad)
-	return z*y*x
 
 keyword_args={}
 positional_args=[]
@@ -141,7 +126,7 @@ if testcase_fnames:
 					basename_correct_matches[tuple(sorted(map(os.path.basename,img_fnames)))]=False
 				self.image_fnames.append(fname)
 			elif name == 'camera':
-				self.cur_image_quaternion=quaternion_from_kolor_file(
+				self.cur_image_quaternion=panorama.quaternion_from_kolor_file(
 											*[float(attrs.get(name,0)) for name in ('yaw','pitch','roll')])
 			elif name == 'match':
 				img_fnames=[self.image_fnames[int(attrs.get(attr))] for attr in ('image1','image2')]
@@ -167,6 +152,7 @@ if testcase_fnames:
 					('count',iterative_optimiser.FloatParam(0,1)),
 					('angle_deg_limit50',iterative_optimiser.FloatParam(-1,0)),
 					('shift_ratio',iterative_optimiser.FloatParam(-1,0)),
+					('triplets_error_deg',iterative_optimiser.FloatParam(-1,0)),
 					)
 
 	def optimiser_test_func(params):
@@ -208,6 +194,7 @@ if testcase_fnames:
 
 	for matches_name in positional_args:
 		matches=dict()
+		triplets_input=dict()
 		for fnames_pair,line,angle_deg,count,score,x_shift,y_shift in \
 															read_lowlevel_matches_from_file(matches_name):
 			is_correct_match=correct_matches.get(tuple(sorted(fnames_pair)))
@@ -222,38 +209,45 @@ if testcase_fnames:
 			if score > 0:
 				correct_match_rot=image_quaternions[fnames_pair[0]].rotation_to_b(
 																		image_quaternions[fnames_pair[1]])
-				detected_match_rot=quaternion_from_match_angles(angle_deg,x_shift,y_shift)
+				detected_match_rot=panorama.quaternion_from_match_angles(angle_deg,x_shift,y_shift)
 				rotation_error_deg=correct_match_rot.rotation_to_b(detected_match_rot). \
 																				total_rotation_angle_deg()
 				if rotation_error_deg > 15 and rotation_error_deg < 40:
 					continue	# Unclear if match rotation is the same as in testcase - skip this match
 
 				tries+=1
-				classifier_input=(score,count,min(50,abs(angle_deg)),
-																panorama.calc_shift_ratio(x_shift,y_shift))
-				decision_value=panorama.calc_classifier_decision_value(classifier_input,
-																				panorama.classifier_params)
+				match_metrics=(score,count,angle_deg,x_shift,y_shift)
 				matches[fnames_pair]=[(rotation_error_deg < 25),line,detected_match_rot,rotation_error_deg,
-																		classifier_input,decision_value]
+																							match_metrics]
+				triplets_input[fnames_pair]=(detected_match_rot,match_metrics)
 			else:
 				tries+=1
 				correct_predictions_with_zero_score+=int(not is_correct_match)
 				if not print_training_data and is_correct_match:
 					print is_correct_match,-1.11111,line
 
-		for fnames_pair,(is_correct_match,line,q,rotation_error_deg,classifier_input,
-																		decision_value) in matches.items():
+		triplet_scores=panorama.calc_triplet_scores(triplets_input)
+
+		for fnames_pair,(is_correct_match,line,q,rotation_error_deg,match_metrics) in matches.items():
+			score,count,angle_deg,xd,yd=match_metrics
+			shift_ratio=panorama.calc_shift_ratio(xd,yd)
+			triplet_score=triplet_scores.get(fnames_pair,(30,-1000))[0]		#!!! Tune this
+			classifier_input=(score,count,min(50,abs(angle_deg)),shift_ratio,triplet_score)
+
 			training_data.append((int(is_correct_match),) + classifier_input)
 
 			if print_training_data:
-				print '%d 1:%s 2:%s 3:%s 4:%s' % training_data[-1]
+				print '%d %d %d %.2f %.4f %.2f' % training_data[-1]
 
+			decision_value=panorama.calc_classifier_decision_value(classifier_input,
+																				panorama.classifier_params)
 			predicted=(decision_value >= 0)
 			nonzero_successes+=int(predicted == is_correct_match)
 			nonzero_tries+=1
 
 			if not print_training_data and predicted != is_correct_match:
-				print is_correct_match,decision_value,line
+				print '%s %.2f %.3f %s %s %.0f %s' % (is_correct_match,rotation_error_deg,decision_value,
+											fnames_pair[0],fnames_pair[1],triplet_score,classifier_input)
 
 	if not print_training_data and tries:
 		print 'Successes: %u/%u %.2f%% (nonzero links only)' % (nonzero_successes,nonzero_tries,

@@ -1,6 +1,7 @@
 # -*- encoding: latin-1 -*-
 
 import sys,math,operator,cPickle,decimal,numpy,cv2,exif,boto3
+from quaternion import Quaternion
 
 RESIZE_FACTOR=4
 KEYPOINT_BLOCKS=5
@@ -18,7 +19,7 @@ keypoint_matcher=cv2.FlannBasedMatcher({'algorithm': 6, 'table_number': 6, 'key_
 										'multi_probe_level': 1},{'checks': 50})
 clahe=cv2.createCLAHE(clipLimit=40,tileGridSize=(16,16))
 
-classifier_params=(0.02,0.72,-0.21,-0.46,+8.975)
+classifier_params=(0.02,0.68,-0.21,-0.4,-0.63,-10.542)
 
 class ImageKeypoints:
 	class Keypoints:
@@ -376,7 +377,81 @@ def init_aws_session(profile_name=None):
 
 	aws_session=boto3.Session(profile_name=profile_name)
 
+def quaternion_from_match_angles(angle_deg,x_shift,y_shift):
+	# Output quaternion coordinate system is such that X points ahead, Y left, Z up
+	x=Quaternion.from_single_axis_angle_deg(0,-angle_deg)
+	y=Quaternion.from_single_axis_angle_deg(1,-y_shift)
+	z=Quaternion.from_single_axis_angle_deg(2,+x_shift)
+	return y*z*x		#!!! Probably in correct order
+
+def quaternion_from_kolor_file(yaw_rad,pitch_rad,roll_rad):
+	# Output quaternion coordinate system is such that X points ahead, Y left, Z up
+	x=Quaternion.from_single_axis_angle(0,-roll_rad)
+	y=Quaternion.from_single_axis_angle(1,+pitch_rad)
+	z=Quaternion.from_single_axis_angle(2,+yaw_rad)
+	return z*y*x
+
+def calc_triplet_scores(matches):
+	# Input: matches[image_ids_pair]=(quaternion,match_metrics)
+
+	decision_values=dict()
+	for image_ids_pair,(q,match_metrics) in matches.items():
+		score,count,angle_deg,xd,yd=match_metrics
+		shift_ratio=calc_shift_ratio(xd,yd)
+		decision_values[image_ids_pair]=calc_classifier_decision_value(
+					(score,count,min(50,abs(angle_deg)),shift_ratio,10),classifier_params)	#!!! Tune this 10
+
+	triplet_scores=dict()
+	for image_ids_pair1,(q1,match_metrics1) in matches.items():
+		image_id1=image_ids_pair1[0]
+		image_id2=image_ids_pair1[1]
+		if image_id1 > image_id2:
+			continue
+		for image_ids_pair2,(q2,match_metrics2) in matches.items():
+			if not (image_id2 in image_ids_pair2 and image_id1 not in image_ids_pair2):
+				continue
+
+			reverse_pair2=(image_id2 == image_ids_pair2[1])
+			image_id3=image_ids_pair2[0 if reverse_pair2 else 1]
+
+			if image_id2 > image_id3:
+				continue
+
+			if reverse_pair2:
+				q2=q2.conjugate()
+
+			for reverse_pair3 in (False,True):
+				image_ids_pair3=(image_id3,image_id1) if reverse_pair3 else (image_id1,image_id3)
+				if image_ids_pair3 not in matches:
+					continue
+
+				q3,match_metrics3=matches[image_ids_pair3]
+
+				if reverse_pair3:
+					q3=q3.conjugate()
+
+				error_deg=(q1 * q2).rotation_to_b(q3).total_rotation_angle_deg()
+
+				pairs=(image_ids_pair1,image_ids_pair2,image_ids_pair3)
+				for pair in pairs:
+					triplet_decision_value=min([decision_values[p] for p in pairs if p != pair])
+					if triplet_decision_value > 20:		#!!! This threshold should be found automatically
+						if pair not in triplet_scores or triplet_decision_value > triplet_scores[pair][1]:
+							triplet_scores[pair]=(error_deg,triplet_decision_value)
+
+	return triplet_scores
+
 def write_output_file_matches(output_fd,matches,nr_of_images):
+	triplets_input=dict()
+
+	for idx1,idx2,debug_str,output_string,match_metrics in matches:
+		if output_string:
+			score,count,angle_deg,xd,yd=match_metrics
+			detected_match_rot=quaternion_from_match_angles(angle_deg,xd,yd)
+			triplets_input[(idx1,idx2)]=(detected_match_rot,match_metrics)
+
+	triplet_scores=calc_triplet_scores(triplets_input)
+
 	link_stats=[[] for i in range(nr_of_images)]
 
 	for idx1,idx2,debug_str,output_string,match_metrics in matches:
@@ -386,10 +461,11 @@ def write_output_file_matches(output_fd,matches,nr_of_images):
 			continue
 
 		score,count,angle_deg,xd,yd=match_metrics
+		triplet_score=triplet_scores.get((idx1,idx2),(30,-1000))[0]		#!!! Tune this
 
 		shift_ratio=calc_shift_ratio(xd,yd)
 		decision_value=calc_classifier_decision_value(
-								(score,count,min(50,abs(angle_deg)),shift_ratio),classifier_params)
+							(score,count,min(50,abs(angle_deg)),shift_ratio,triplet_score),classifier_params)
 		if decision_value < 0:
 			continue
 
