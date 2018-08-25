@@ -311,7 +311,7 @@ def find_matches(img1,img2):
 
 	decision_value=calc_classifier_decision_value(
 						(best_score,best_count,min(50,abs(best_angle_deg)),shift_ratio),classifier_params)
-	if decision_value < 0 or best_score <= 0:
+	if decision_value < 0 or best_score <= 0 or not best_inliers:
 		return (debug_str,matched_points)
 
 	# src_pts=numpy.float32([(x1,y1) for distance,x1,y1,x2,y2 in matches[:1000]]).reshape(-1,1,2)
