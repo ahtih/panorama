@@ -277,10 +277,9 @@ def find_matches(img1,img2):
 	matches.sort(key=operator.itemgetter(0))
 
 	debug_str='%d matches' % len(matches)
-	matched_points=[]
 
 	if not matches:
-		return (debug_str,matched_points)
+		return (debug_str,)
 
 	debug_str+=', distances %.0f:%.0f' % (matches[0][0],matches[:30][-1][0])
 
@@ -307,12 +306,8 @@ def find_matches(img1,img2):
 
 	debug_str+=', %+ddeg, score %d/%.2f=%d, shift %+.0fdeg,%+.0fdeg' % (best_angle_deg,best_count,
 															best_coverage,best_score,best_xd,best_yd)
-	shift_ratio=calc_shift_ratio(best_xd,best_yd)
-
-	decision_value=calc_classifier_decision_value(
-						(best_score,best_count,min(50,abs(best_angle_deg)),shift_ratio),classifier_params)
-	if decision_value < 0 or best_score <= 0 or not best_inliers:
-		return (debug_str,matched_points)
+	if best_score <= 0 or not best_inliers:
+		return (debug_str,)
 
 	# src_pts=numpy.float32([(x1,y1) for distance,x1,y1,x2,y2 in matches[:1000]]).reshape(-1,1,2)
 	# dst_pts=numpy.float32([(x2,y2) for distance,x1,y1,x2,y2 in matches[:1000]]).reshape(-1,1,2)
@@ -321,6 +316,7 @@ def find_matches(img1,img2):
 
 	max_dist_square=((img1.x_fov_deg + img1.y_fov_deg) / 50.0) ** 2
 	representative_xy_pairs=[]
+	matched_points=[]
 	for i in best_inliers:
 		xy=matches[i][1:3]
 
@@ -335,25 +331,30 @@ def find_matches(img1,img2):
 
 	# img1.show_img_with_keypoints([matches[xy_pair[4]].queryIdx for xy_pair in representative_xy_pairs])
 
-	return (debug_str,matched_points)
+	return (debug_str,matched_points,best_score,best_count,best_angle_deg,best_xd,best_yd)
 
 def process_match_and_write_to_dynamodb(processing_batch_key,s3_fname1,s3_fname2):
 	img1=ImageKeypoints(s3_fname1,False,S3_KEYPOINTS_BUCKET_NAME)
 	img2=ImageKeypoints(s3_fname2,False,S3_KEYPOINTS_BUCKET_NAME)
 
-	debug_str,matched_points=find_matches(img1,img2)
+	result=find_matches(img1,img2)
 
 	item={'processing_batch_key': processing_batch_key,
 			's3_filenames': s3_fname1 + '_' + s3_fname2,
-			'debug_str': debug_str,
+			'debug_str': result[0],
 			'img1_s3_fname': s3_fname1,
 			'img2_s3_fname': s3_fname2,
 			'img1_focal_length_35mm': decimal.Decimal(str(img1.focal_length_35mm)),
 			'img2_focal_length_35mm': decimal.Decimal(str(img2.focal_length_35mm)),
 			'img1_channel_keypoints': list(img1.channel_keypoints),
-			'img2_channel_keypoints': list(img2.channel_keypoints),
-			'matched_points': map(list,matched_points)
+			'img2_channel_keypoints': list(img2.channel_keypoints)
 			}
+
+	if len(result) > 1:
+		item['matched_points']=map(list,result[1])
+
+		for idx,attr_name in enumerate(('score','count','angle_deg','xd','yd')):
+			item[attr_name]=decimal.Decimal(str(result[2 + idx]))
 
 	table=aws_session.resource('dynamodb').Table(DYNAMODB_TABLE_NAME)
 	table.put_item(Item=item)
@@ -374,6 +375,33 @@ def init_aws_session(profile_name=None):
 	global aws_session
 
 	aws_session=boto3.Session(profile_name=profile_name)
+
+def write_output_file_matches(output_fd,matches,nr_of_images):
+	link_stats=[[] for i in range(nr_of_images)]
+
+	for idx1,idx2,debug_str,output_string,match_metrics in matches:
+		print >>output_fd,'        <!-- image %d<-->%d: %s -->' % (idx1,idx2,debug_str)
+
+		if not output_string:
+			continue
+
+		score,count,angle_deg,xd,yd=match_metrics
+
+		shift_ratio=calc_shift_ratio(xd,yd)
+		decision_value=calc_classifier_decision_value(
+								(score,count,min(50,abs(angle_deg)),shift_ratio),classifier_params)
+		if decision_value < 0:
+			continue
+
+		print >>output_fd,'        <match image1="%d" image2="%d">\n            <points>\n%s            </points>\n        </match>' % \
+																				(idx1,idx2,output_string)
+		link_stats[idx1].append(idx2)
+		link_stats[idx2].append(idx1)
+
+	print >>output_fd,'<!-- Link stats: -->'
+
+	for idx,linked_images in enumerate(link_stats):
+		print >>output_fd,'<!-- #%d links: %s -->' % (idx,' '.join(map(str,linked_images)))
 
 def write_output_file_header(output_fd,images):
 	print >>output_fd,'''<?xml version="1.0" encoding="UTF-8"?>

@@ -12,20 +12,21 @@ def worker_func(args):
 		global images_with_keypoints
 		idx1,idx2=args
 
-		debug_str,matched_points=panorama.find_matches(	images_with_keypoints[idx1],
-														images_with_keypoints[idx2])
+		result=panorama.find_matches(	images_with_keypoints[idx1],
+										images_with_keypoints[idx2])
 		output_str=''
-		for x1,y1,x2,y2 in matched_points:
-			output_str+='                <point x1="%d" y1="%d" x2="%d" y2="%d"/>\n' % (x1,y1,x2,y2)
+		match_metrics=tuple()
+		if len(result) > 1:
+			match_metrics=result[2:]
+			for x1,y1,x2,y2 in result[1]:
+				output_str+='                <point x1="%d" y1="%d" x2="%d" y2="%d"/>\n' % (x1,y1,x2,y2)
 
-		return args + (debug_str,output_str)
+		return args + (result[0],output_str,match_metrics)
 	except KeyboardInterrupt:
 		return None
 
 def print_matches_for_images(output_fd):
 	global max_procs,images_with_keypoints
-
-	link_stats=[[] for img in images_with_keypoints]
 
 	gc.collect()
 	worker_pool=multiprocessing.Pool(max_procs) if max_procs > 1 else None
@@ -40,19 +41,7 @@ def print_matches_for_images(output_fd):
 	else:
 		results=itertools.imap(worker_func,worker_args)
 
-	for idx1,idx2,debug_str,output_string in results:
-		print >>output_fd,'        <!-- image %d<-->%d: %s -->' % (idx1,idx2,debug_str)
-
-		if output_string:
-			print >>output_fd,'        <match image1="%d" image2="%d">\n            <points>\n%s            </points>\n        </match>' % \
-																				(idx1,idx2,output_string)
-			link_stats[idx1].append(idx2)
-			link_stats[idx2].append(idx1)
-
-	print >>output_fd,'<!-- Link stats: -->'
-
-	for idx,linked_images in enumerate(link_stats):
-		print >>output_fd,'<!-- #%d links: %s -->' % (idx,' '.join(map(str,linked_images)))
+	panorama.write_output_file_matches(output_fd,results,len(images_with_keypoints))
 
 def read_lowlevel_matches_from_file(fname):
 	image_fnames=[]

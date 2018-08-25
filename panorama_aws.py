@@ -32,32 +32,29 @@ def write_output_file(match_results,output_fname=None):
 
 	panorama.write_output_file_header(output_fd,images)
 
-	link_stats=[[] for img in images]
-
+	matches=[]
 	for match_result in match_results:
 		idx1=fname_to_idx.get(match_result.get('img1_s3_fname'))
 		idx2=fname_to_idx.get(match_result.get('img2_s3_fname'))
 		if idx1 is None or idx2 is None:
 			continue
 
-		print >>output_fd,'        <!-- image %d<-->%d: %s -->' % (idx1,idx2,match_result.get('debug_str',''))
+		matched_points=match_result.get('matched_points',tuple())
 
 		output_str=''
-		for coords_decimal in match_result.get('matched_points',tuple()):
-			x1,y1,x2,y2=map(int,coords_decimal)
-			output_str+='                <point x1="%d" y1="%d" x2="%d" y2="%d"/>\n' % (x1,y1,x2,y2)
+		match_metrics=None
 
-		if output_str:
-			print >>output_fd,'        <match image1="%d" image2="%d">\n            <points>\n%s            </points>\n        </match>' % \
-																				(idx1,idx2,output_str)
-			link_stats[idx1].append(idx2)
-			link_stats[idx2].append(idx1)
+		if matched_points:
+			for coords_decimal in matched_points:
+				x1,y1,x2,y2=map(int,coords_decimal)
+				output_str+='                <point x1="%d" y1="%d" x2="%d" y2="%d"/>\n' % (x1,y1,x2,y2)
+			match_metrics=(int(match_result['score']),int(match_result['count']),
+											float(match_result['angle_deg']),
+											float(match_result['xd']),float(match_result['yd']))
 
-	print >>output_fd,'<!-- Link stats: -->'
+		matches.append((idx1,idx2,match_result.get('debug_str',''),output_str,match_metrics))
 
-	for idx,linked_images in enumerate(link_stats):
-		print >>output_fd,'<!-- #%d links: %s -->' % (idx,' '.join(map(str,sorted(linked_images))))
-
+	panorama.write_output_file_matches(output_fd,matches,len(images))
 	panorama.write_output_file_footer(output_fd)
 
 keyword_args={}
