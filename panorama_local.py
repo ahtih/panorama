@@ -105,7 +105,6 @@ if testcase_fnames:
 		testcase_fnames=(testcase_fnames,)
 
 	correct_matches=dict()
-	basename_correct_matches=dict()
 	image_quaternions=dict()
 
 	class kolor_xml_handler(xml.sax.handler.ContentHandler):
@@ -123,7 +122,7 @@ if testcase_fnames:
 				for fname2 in self.image_fnames:
 					img_fnames=(fname,fname2)
 					correct_matches[tuple(sorted(img_fnames))]=False
-					basename_correct_matches[tuple(sorted(map(os.path.basename,img_fnames)))]=False
+					correct_matches[tuple(sorted(map(os.path.basename,img_fnames)))]=False
 				self.image_fnames.append(fname)
 			elif name == 'camera':
 				self.cur_image_quaternion=panorama.quaternion_from_kolor_file(
@@ -131,7 +130,7 @@ if testcase_fnames:
 			elif name == 'match':
 				img_fnames=[self.image_fnames[int(attrs.get(attr))] for attr in ('image1','image2')]
 				correct_matches[tuple(sorted(img_fnames))]=True
-				basename_correct_matches[tuple(sorted(map(os.path.basename,img_fnames)))]=True
+				correct_matches[tuple(sorted(map(os.path.basename,img_fnames)))]=True
 
 		def endElement(self,name):
 			if name == 'image':
@@ -197,11 +196,8 @@ if testcase_fnames:
 		triplets_input=dict()
 		for fnames_pair,line,angle_deg,count,score,x_shift,y_shift in \
 															read_lowlevel_matches_from_file(matches_name):
-			is_correct_match=correct_matches.get(tuple(sorted(fnames_pair)))
-			if is_correct_match is None:
-				is_correct_match=basename_correct_matches.get(tuple(sorted(fnames_pair)))
-
-			if is_correct_match is None:
+			match_exists_in_testcase=correct_matches.get(tuple(sorted(fnames_pair)))
+			if match_exists_in_testcase is None:
 				if '--nowarn' not in keyword_args:
 					print 'Warning: image pair %s %s not present in testcases' % tuple(fnames_pair)
 				continue
@@ -222,9 +218,9 @@ if testcase_fnames:
 				triplets_input[fnames_pair]=(detected_match_rot,match_metrics)
 			else:
 				tries+=1
-				correct_predictions_with_zero_score+=int(not is_correct_match)
-				if not print_training_data and is_correct_match:
-					print is_correct_match,-1.11111,line
+				correct_predictions_with_zero_score+=int(not match_exists_in_testcase)
+				if not print_training_data and match_exists_in_testcase:
+					print match_exists_in_testcase,-1.11111,line
 
 		triplet_scores=panorama.calc_triplet_scores(triplets_input)
 
