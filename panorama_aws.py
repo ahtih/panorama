@@ -19,7 +19,7 @@ def write_output_file(match_results,output_fname=None):
 	fname_to_idx={}
 	for match_result in match_results:
 		for key_prefix in ('img1_','img2_'):
-			fname=match_result.get(key_prefix + 's3_fname')
+			fname=match_result.get(key_prefix + 'fname')
 			if not fname or fname in fname_to_idx:
 				continue
 			fname_to_idx[fname]=len(images)
@@ -34,8 +34,8 @@ def write_output_file(match_results,output_fname=None):
 
 	matches=[]
 	for match_result in match_results:
-		idx1=fname_to_idx.get(match_result.get('img1_s3_fname'))
-		idx2=fname_to_idx.get(match_result.get('img2_s3_fname'))
+		idx1=fname_to_idx.get(match_result.get('img1_fname'))
+		idx2=fname_to_idx.get(match_result.get('img2_fname'))
 		if idx1 is None or idx2 is None:
 			continue
 
@@ -89,12 +89,12 @@ else:
 
 	s3_fnames=[]
 
-	for fname in image_fnames:
+	for idx,fname in enumerate(image_fnames):
 		print 'Processing',fname
 		img=panorama.ImageKeypoints(fname,True)
 		print '   ','+'.join(map(str,img.channel_keypoints))
 
-		s3_fname=processing_batch_key + '/' + os.path.basename(fname)
+		s3_fname=processing_batch_key + '/' + str(idx) + '-' + os.path.basename(fname)
 		img.save_to_s3(s3_fname)
 		s3_fnames.append(s3_fname)
 
@@ -104,7 +104,8 @@ else:
 
 	lambda_parameters={'function': 'spawn_match_images_tasks',
 								'processing_batch_key': processing_batch_key,
-								's3_fnames': s3_fnames}
+								's3_fnames': s3_fnames,
+								'orig_fnames': image_fnames}
 	invoke_result=lambda_client.invoke(FunctionName='panorama',InvocationType='RequestResponse',
 										Payload=json.dumps(lambda_parameters))
 	status_code=invoke_result.get('StatusCode')

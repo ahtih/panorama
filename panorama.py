@@ -334,7 +334,8 @@ def find_matches(img1,img2):
 
 	return (debug_str,matched_points,best_score,best_count,best_angle_deg,best_xd,best_yd)
 
-def process_match_and_write_to_dynamodb(processing_batch_key,s3_fname1,s3_fname2):
+def process_match_and_write_to_dynamodb(processing_batch_key,s3_fname1,s3_fname2,
+																		orig_fname1=None,orig_fname2=None):
 	img1=ImageKeypoints(s3_fname1,False,S3_KEYPOINTS_BUCKET_NAME)
 	img2=ImageKeypoints(s3_fname2,False,S3_KEYPOINTS_BUCKET_NAME)
 
@@ -343,8 +344,8 @@ def process_match_and_write_to_dynamodb(processing_batch_key,s3_fname1,s3_fname2
 	item={'processing_batch_key': processing_batch_key,
 			's3_filenames': s3_fname1 + '_' + s3_fname2,
 			'debug_str': result[0],
-			'img1_s3_fname': s3_fname1,
-			'img2_s3_fname': s3_fname2,
+			'img1_fname': orig_fname1 or s3_fname1,
+			'img2_fname': orig_fname2 or s3_fname2,
 			'img1_focal_length_35mm': decimal.Decimal(str(img1.focal_length_35mm)),
 			'img2_focal_length_35mm': decimal.Decimal(str(img2.focal_length_35mm)),
 			'img1_channel_keypoints': list(img1.channel_keypoints),

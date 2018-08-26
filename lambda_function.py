@@ -37,12 +37,13 @@ panorama.init_aws_session()
 
 def match_images(event):
 	panorama.process_match_and_write_to_dynamodb(event['processing_batch_key'],
-																event['s3_fname1'],event['s3_fname2'])
+					event['s3_fname1'],event['s3_fname2'],event['orig_fname1'],event['orig_fname2'])
 	return 'OK'
 
 def spawn_match_images_tasks(event):
 	processing_batch_key=event['processing_batch_key']
 	fnames=event['s3_fnames']
+	orig_fnames=event['orig_fnames']
 
 	lambda_client=panorama.aws_session.client('lambda')
 
@@ -52,7 +53,9 @@ def spawn_match_images_tasks(event):
 			lambda_parameters={'function': 'match_images',
 								'processing_batch_key': processing_batch_key,
 								's3_fname1': fnames[idx1],
-								's3_fname2': fnames[idx2]}
+								's3_fname2': fnames[idx2],
+								'orig_fname1': orig_fnames[idx1],
+								'orig_fname2': orig_fnames[idx2]}
 			invoke_ret_val=lambda_client.invoke(
 											FunctionName='panorama',InvocationType='Event',
 											Payload=json.dumps(lambda_parameters))
