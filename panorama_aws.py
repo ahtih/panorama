@@ -92,7 +92,7 @@ else:
 	for idx,fname in enumerate(image_fnames):
 		print 'Processing',fname
 		img=panorama.ImageKeypoints(fname,True)
-		print '   ','+'.join(map(str,img.channel_keypoints))
+		# print '   ','+'.join(map(str,img.channel_keypoints))
 
 		s3_fname=processing_batch_key + '/' + str(idx) + '-' + os.path.basename(fname)
 		img.save_to_s3(s3_fname)
