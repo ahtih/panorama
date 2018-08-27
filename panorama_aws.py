@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- encoding: latin-1 -*-
 
-import sys,os.path,random,json,socket,boto3,panorama
+import sys,os.path,time,random,json,socket,boto3,panorama
 
 def get_match_results(processing_batch_key):
 	try:
@@ -117,12 +117,17 @@ else:
 	expected_nr_of_match_results=len(s3_fnames) * (len(s3_fnames)-1) / 2
 	prev_printed_status=0
 
+	prev_update_time=time.time()
 	while True:
 		match_results=get_match_results(processing_batch_key)
-		if len(match_results) >= expected_nr_of_match_results:
-			break
 		if len(match_results) != prev_printed_status:
 			print 'Completed %d of %d pairwise matches' % (len(match_results),expected_nr_of_match_results)
 			prev_printed_status=len(match_results)
+			prev_update_time=time.time()
+		if len(match_results) >= expected_nr_of_match_results:
+			break
+		if time.time() > prev_update_time + 60:
+			print 'Timeout - Lambda functions not progressing'
+			exit(1)
 
 	write_output_file(match_results,keyword_args.get('--output-fname'))
