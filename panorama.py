@@ -1,6 +1,6 @@
 # -*- encoding: latin-1 -*-
 
-import sys,math,operator,cPickle,decimal,numpy,cv2,exif,boto3
+import sys,math,operator,cPickle,decimal,numpy,cv2,exif,boto3,sky_detection
 from quaternion import Quaternion
 
 RESIZE_FACTOR=4
@@ -23,14 +23,14 @@ classifier_params=(0.02,0.68,-0.21,-0.4,-0.63,-10.542)
 
 class ImageKeypoints:
 	class Keypoints:
-		def __init__(self,img=None,focal_length_pixels=None,x1=None,x2=None,y1=None,y2=None):
+		def __init__(self,img=None,focal_length_pixels=None,x1=None,x2=None,y1=None,y2=None,mask=None):
 			self.descriptors=None
 			self.xys=[]
 
 			if img is None:
 				return
 
-			kp,self.descriptors=detector.detectAndCompute(img[y1:y2,x1:x2],None)
+			kp,self.descriptors=detector.detectAndCompute(img[y1:y2,x1:x2],mask[y1:y2,x1:x2])
 
 			if self.descriptors is not None:
 				base_x=x1 - img.shape[1]/2.0
@@ -62,6 +62,9 @@ class ImageKeypoints:
 
 		if RESIZE_FACTOR != 1:
 			self.img=cv2.resize(self.img,(0,0),fx=1.0 / RESIZE_FACTOR,fy=1.0 / RESIZE_FACTOR)
+
+		self.sky_mask=cv2.threshold(sky_detection.calc_image_skyness(self.img),
+																		128,255,cv2.THRESH_BINARY_INV)[1]
 
 		tags=exif.read_exif(fname)
 		focal_length_mm=exif.exif_focal_length(tags)
@@ -134,7 +137,8 @@ class ImageKeypoints:
 			for y_idx in range(len(y_splits)-1):
 				self.channels[-1]+=ImageKeypoints.Keypoints(img,self.focal_length_resized_pixels,
 						x_splits[x_idx],min(img.shape[1],x_splits[x_idx+1] + 2*detector_patch_size),
-						y_splits[y_idx],min(img.shape[0],y_splits[y_idx+1] + 2*detector_patch_size))
+						y_splits[y_idx],min(img.shape[0],y_splits[y_idx+1] + 2*detector_patch_size),
+						self.sky_mask)
 
 	def degrees_to_pixels(self,x_deg,y_deg):
 		return (int(self.orig_img_shape[1] / 2.0 + math.tan(math.radians(x_deg)) * \
@@ -270,10 +274,12 @@ def find_matches(img1,img2):
 
 	matches=[]
 	for chan1,chan2 in zip(img1.channels,img2.channels):
-		for m,m2 in keypoint_matcher.knnMatch(chan1.descriptors,chan2.descriptors,k=2):
-			if m.distance < 0.8 * m2.distance:
-				matches.append((m.distance,	chan1.xys[m.queryIdx][0],chan1.xys[m.queryIdx][1],
-											chan2.xys[m.trainIdx][0],chan2.xys[m.trainIdx][1]))
+		for match_pair in keypoint_matcher.knnMatch(chan1.descriptors,chan2.descriptors,k=2):
+			if len(match_pair) == 2:
+				m,m2=match_pair
+				if m.distance < 0.8 * m2.distance:
+					matches.append((m.distance,	chan1.xys[m.queryIdx][0],chan1.xys[m.queryIdx][1],
+												chan2.xys[m.trainIdx][0],chan2.xys[m.trainIdx][1]))
 
 	matches.sort(key=operator.itemgetter(0))
 
@@ -292,18 +298,19 @@ def find_matches(img1,img2):
 	best_xd=0
 	best_yd=0
 
-	for angle_deg in range(-180,+180,1):
-		count,coverage,inliers,xd,yd=calc_shift_for_angle(img1,img2,matches,angle_deg)
-		score=int(count / float(coverage))
+	if matches[0][0] < 30:
+		for angle_deg in range(-180,+180,1):
+			count,coverage,inliers,xd,yd=calc_shift_for_angle(img1,img2,matches,angle_deg)
+			score=int(count / float(coverage))
 
-		if score > best_score:
-			best_score=score
-			best_count=count
-			best_coverage=coverage
-			best_inliers=inliers
-			best_xd=xd
-			best_yd=yd
-			best_angle_deg=angle_deg
+			if score > best_score:
+				best_score=score
+				best_count=count
+				best_coverage=coverage
+				best_inliers=inliers
+				best_xd=xd
+				best_yd=yd
+				best_angle_deg=angle_deg
 
 	debug_str+=', %+ddeg, score %d/%.2f=%d, shift %+.0fdeg,%+.0fdeg' % (best_angle_deg,best_count,
 															best_coverage,best_score,best_xd,best_yd)
