@@ -8,7 +8,8 @@ from OpenGL.GL import *
 from OpenGL.GL.shaders import compileShader,compileProgram
 from PIL import Image
 
-MAX_IMG_SIZE=8192	# 16384
+MAX_QUALITY_CODE=13		# 8192 pixels x size
+VIEWABLE_IMAGES_PATH='viewable-images'
 
 class SphericalPanorama(object):
 	def __init__(self,image):
@@ -116,19 +117,33 @@ class SphericalPanorama(object):
 				glDeleteProgram(self.shader)
 			glDeleteVertexArrays(1, [self.vao])
 
+def is_valid_image_id(id):
+	return id and not set(id) - set('0123456789')
+
 def load_image(fname):
 	# Open equirectangular photosphere
+	global MAX_QUALITY_CODE
 
 	if fname.endswith('.npy'):
 		return numpy.load(fname,'r',False)
 
+	if not os.access(fname,os.F_OK) and is_valid_image_id(fname):
+		for quality_code in range(MAX_QUALITY_CODE,10-1,-1):
+			viewable_images_fname=VIEWABLE_IMAGES_PATH + '/' + fname + '/' + str(quality_code) + '.jpg'
+			if os.access(viewable_images_fname,os.F_OK):
+				fname=viewable_images_fname
+				break
+
+	print 'Loading',fname
+
 	im=Image.open(fname)
 
-	if max(im.size) > MAX_IMG_SIZE:
-		coeff=MAX_IMG_SIZE / float(max(im.size))
+	max_img_size=2**MAX_QUALITY_CODE
+	if max(im.size) > max_img_size:
+		coeff=max_img_size / float(max(im.size))
 		new_size=[]
 		for value in im.size:
-			new_size.append(min(MAX_IMG_SIZE,int(value*coeff + 0.5)))
+			new_size.append(min(max_img_size,int(value*coeff + 0.5)))
 
 		print 'Resizing image from %dx%d to %dx%d' % (tuple(im.size) + tuple(new_size))
 		im=im.resize(new_size,Image.ANTIALIAS)
@@ -139,6 +154,9 @@ if __name__ == "__main__":
 	import sys
 
 	fnames=sys.argv[1:]
+	if not fnames:
+		fnames=filter(is_valid_image_id,os.listdir(VIEWABLE_IMAGES_PATH))
+
 	cur_image_idx=0
 
 	img=load_image(fnames[cur_image_idx])
