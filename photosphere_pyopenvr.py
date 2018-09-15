@@ -8,7 +8,7 @@ import numpy,openvr,openvr.gl_renderer,glfw,openvr.glframework.glfw_app,textwrap
 import OpenGL.arrays.vbo
 from OpenGL.GL import *
 from OpenGL.GL.shaders import compileShader,compileProgram
-from PIL import Image
+from PIL import Image,ImageDraw,ImageFont
 
 MAX_QUALITY_CODE=13		# 8192 pixels x size
 VIEWABLE_IMAGES_PATH='viewable-images'
@@ -45,8 +45,7 @@ class SphericalPanorama(object):
 		az=math.radians(self.center_azimuth_deg + 180)
 		s=math.sin(az)
 		c=math.cos(az)
-		self.azimuth_rotation_matrix=numpy.matrix((
-													( c, 0,-s, 0),
+		self.azimuth_rotation_matrix=numpy.matrix((	( c, 0,-s, 0),
 													( 0, 1, 0, 0),
 													( s, 0, c, 0),
 													( 0, 0, 0, 1),
@@ -146,18 +145,21 @@ class NextImageLinksActor(object):
 		self.last_modelview_matrix=None
 		self.texture_images_list=[]
 
+		try:
+			self.font=ImageFont.truetype('/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',48)
+		except IOError:
+			self.font=None
+
 		self.next_image_sprite=numpy.array(Image.open('orange-donut.png'))
 		self.north_sprite=numpy.array(Image.open('north.png'))
-
-		self.texture_images_list.append(self.next_image_sprite)
-		self.texture_images_list.append(self.north_sprite)
 
 	def calc_texture_coords(self,sprite_image_numpy,x_fraction,y_fraction):
 		base_y=0
 		for img in self.texture_images_list:
 			if img.__array_interface__['data'] == sprite_image_numpy.__array_interface__['data']:
 				return (x_fraction * img.shape[1] / float(self.texture_image_shape[1]),
-						(base_y + (1-y_fraction) * img.shape[0]) / float(self.texture_image_shape[0]))
+						(base_y + 0.5 + (1-y_fraction) * (img.shape[0]-1)) / \
+																float(self.texture_image_shape[0]))
 			base_y+=img.shape[0]
 
 		return None
@@ -171,11 +173,8 @@ class NextImageLinksActor(object):
 				math.sin(az) * math.cos(elevation),
 				1)
 
-	def calc_sprite_vertexes(self,sprite_image_numpy,world_azimuth_deg,elevation_deg,size_deg):
-		diagonal_pixels=math.sqrt(sprite_image_numpy.shape[0]**2 + sprite_image_numpy.shape[1]**2)
-
-		x_size_deg=size_deg * sprite_image_numpy.shape[1] / float(diagonal_pixels)
-		y_size_deg=size_deg * sprite_image_numpy.shape[0] / float(diagonal_pixels)
+	def calc_sprite_vertexes(self,sprite_image_numpy,world_azimuth_deg,elevation_deg,y_size_deg):
+		x_size_deg=y_size_deg * sprite_image_numpy.shape[1] / float(sprite_image_numpy.shape[0])
 
 		vertexes=[]
 		for offset_x,offset_y in (	(0,0),(0,1),(1,1),	# Triangle 1
@@ -189,7 +188,36 @@ class NextImageLinksActor(object):
 	def next_image_link_elevation_deg(distance_meters):
 		return -35 + 3.5*math.log(distance_meters)
 
+	def add_textual_sprite(self,text):
+		im=Image.new('RGBA',(1,1),(0,0,0,0))
+		draw=ImageDraw.Draw(im)
+		img_size=draw.textsize(text,font=self.font)
+
+		im=Image.new('RGBA',img_size,(0,0,0,0))
+		draw=ImageDraw.Draw(im)
+		draw.text((0,0),text,font=self.font)
+		del draw
+
+		img_numpy=numpy.array(im)
+
+		self.texture_images_list.append(img_numpy)
+		return img_numpy
+
 	def update(self):
+		self.texture_images_list=[]
+		self.texture_images_list.append(self.next_image_sprite)
+		self.texture_images_list.append(self.north_sprite)
+
+		next_image_text_sprites=dict()
+		for id,(distance_meters,world_azimuth_deg) in self.next_image_links.items():
+			if distance_meters < 1000:
+				text='%.0fm' % (distance_meters,)
+			elif distance_meters < 3000:
+				text='%.1fkm' % (distance_meters/1000.0,)
+			else:
+				text='%.0fkm' % (distance_meters/1000.0,)
+
+			next_image_text_sprites[id]=self.add_textual_sprite(text)
 
 			# Create combined texture image from sprites
 
@@ -219,10 +247,14 @@ class NextImageLinksActor(object):
 
 		sprite_vertexes=self.calc_sprite_vertexes(self.north_sprite,0,25,5)
 
-		for distance_meters,world_azimuth_deg in self.next_image_links.values():
+		for id,(distance_meters,world_azimuth_deg) in self.next_image_links.items():
 			size_deg=max(0.7,8 - 0.5*math.log(distance_meters))
+			elevation_deg=self.next_image_link_elevation_deg(distance_meters)
 			sprite_vertexes+=self.calc_sprite_vertexes(self.next_image_sprite,world_azimuth_deg,
-									self.next_image_link_elevation_deg(distance_meters),size_deg)
+																				elevation_deg,size_deg)
+			text_size_deg=max(1,0.5 * size_deg)
+			sprite_vertexes+=self.calc_sprite_vertexes(next_image_text_sprites[id],world_azimuth_deg,
+											elevation_deg - (size_deg + text_size_deg)/2.0,text_size_deg)
 
 		self.vbo.set_array(numpy.array(sprite_vertexes,'f'))
 
@@ -418,7 +450,7 @@ def select_next_image_links(cur_image_id):
 		else:
 			if id != cur_image_id:
 				selected_images[id]=(lon,lat,math.cos(math.radians(lat)),
-											(0.1 * calc_geo_distance_deg(cur_lon,cur_lat,lon,lat)) ** 2)
+											(0.2 * calc_geo_distance_deg(cur_lon,cur_lat,lon,lat)) ** 2)
 	return selected_images.keys()
 
 def process_KML_feature(e):
