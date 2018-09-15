@@ -144,6 +144,7 @@ class NextImageLinksActor(object):
 		self.vao=None
 		self.vbo=None
 		self.last_modelview_matrix=None
+		self.texture_image=numpy.array(Image.open('orange-donut.png'))
 
 	def calc_sprite_point(self,world_azimuth_deg,elevation_deg):
 		az=-math.radians(world_azimuth_deg)
@@ -159,7 +160,8 @@ class NextImageLinksActor(object):
 		for offset_x,offset_y in (	(-1,-1),(-1,+1),(+1,+1),	# Triangle 1
 									(+1,+1),(-1,-1),(+1,-1)):	# Triangle 2
 			vertexes.append(self.calc_sprite_point(world_azimuth_deg + 0.5*offset_x*x_size_deg,
-													elevation_deg + 0.5*offset_y*y_size_deg))
+													elevation_deg + 0.5*offset_y*y_size_deg) + \
+							((offset_x + 1)*0.5,(offset_y + 1)*0.5))
 		return vertexes
 
 	@staticmethod
@@ -170,7 +172,7 @@ class NextImageLinksActor(object):
 		sprite_vertexes=self.calc_sprite_vertexes(0,25,0.5,10)
 
 		for distance_meters,world_azimuth_deg in self.next_image_links.values():
-			size_deg=max(0.4,4 - 0.25*math.log(distance_meters))
+			size_deg=max(0.5,5 - 0.3*math.log(distance_meters))
 			sprite_vertexes+=self.calc_sprite_vertexes(world_azimuth_deg,
 									self.next_image_link_elevation_deg(distance_meters),size_deg,size_deg)
 
@@ -199,6 +201,23 @@ class NextImageLinksActor(object):
 		glBindVertexArray(self.vao)
 		self.vbo=OpenGL.arrays.vbo.VBO(numpy.array([],'f'))
 
+		self.texture_handle=glGenTextures(1)
+		glBindTexture(GL_TEXTURE_2D,self.texture_handle)
+		glTexParameterf(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR)
+		glTexParameterf(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR)
+		glTexParameterf(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_REPEAT)
+		glTexParameterf(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_MIRRORED_REPEAT)
+		glTexImage2D(GL_TEXTURE_2D,
+					 0,
+					 GL_RGBA8,
+					 self.texture_image.shape[1], # width
+					 self.texture_image.shape[0], # height
+					 0,
+					 GL_RGBA,
+					 GL_UNSIGNED_BYTE,
+					 self.texture_image)
+		glBindTexture(GL_TEXTURE_2D,0)
+
 		self.update()
 
 		vertex_shader=compileShader(textwrap.dedent(
@@ -208,25 +227,29 @@ class NextImageLinksActor(object):
 				layout(location=2) uniform mat4 model_view=mat4(1);
 
 				layout(location=0) in vec4 v;
-				out vec3 viewDir;
+				layout(location=1) in vec2 in_textCoord;
+				out vec2 textCoord;
 
 				void main() 
 				{
 					gl_Position=(projection * model_view) * v;
-					viewDir=vec3(1,0,0);
+					textCoord=in_textCoord;
 				}
 				"""),
 				GL_VERTEX_SHADER)
 		fragment_shader=compileShader(textwrap.dedent(
 				"""#version 450 core
 
-				// layout(binding=0) uniform sampler2D image;
-				in vec3 viewDir;
+				layout(binding=0) uniform sampler2D image;
+				in vec2 textCoord;
 				out vec4 pixelColor;
 
 				void main() 
 				{
-					pixelColor=vec4(1,1,0,0);
+					vec4 color=texture(image,textCoord);
+					if (color.a < 0.3)
+						discard;
+					pixelColor=color;
 				}
 				"""),
 				GL_FRAGMENT_SHADER)
@@ -246,9 +269,14 @@ class NextImageLinksActor(object):
 
 		glBindVertexArray(self.vao)
 		self.vbo.bind()
+
 		glEnableVertexAttribArray(0)
-		glVertexAttribPointer(0,4,GL_FLOAT,GL_FALSE,0,None)
-		# glBindTexture(GL_TEXTURE_2D,self.texture_handle)
+		glVertexAttribPointer(0,4,GL_FLOAT,GL_FALSE,(4+2)*4,self.vbo + 0)
+
+		glEnableVertexAttribArray(1)
+		glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,(4+2)*4,self.vbo + 4*4)
+
+		glBindTexture(GL_TEXTURE_2D,self.texture_handle)
 		glUseProgram(self.shader)
 		glUniformMatrix4fv(1,1,False,projection)
 		glUniformMatrix4fv(2,1,False,m)
@@ -259,6 +287,8 @@ class NextImageLinksActor(object):
 	def dispose_gl(self):
 		if self.vao is not None:
 			glDeleteVertexArrays(1,[self.vao])
+			if self.texture_handle is not None:
+				glDeleteTextures([self.texture_handle])
 		if self.shader is not None:
 			glDeleteProgram(self.shader)
 
