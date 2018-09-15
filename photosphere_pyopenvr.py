@@ -18,8 +18,9 @@ geo_images=dict()			# [id]=(lon_deg,lat_deg,center_azimuth_deg)
 next_image_links=dict()		# [id]=(distance_meters,world_azimuth_deg)
 
 class SphericalPanorama(object):
-	def __init__(self,image):
+	def __init__(self,image,center_azimuth_deg=0):
 		self.image=image
+		self.center_azimuth_deg=center_azimuth_deg
 		self.shader=None
 		self.vao=None
 		self.display_gl_time=0
@@ -40,6 +41,16 @@ class SphericalPanorama(object):
 					 GL_UNSIGNED_BYTE,
 					 self.image)
 		glBindTexture(GL_TEXTURE_2D,0)
+
+		az=math.radians(self.center_azimuth_deg + 180)
+		s=math.sin(az)
+		c=math.cos(az)
+		self.azimuth_rotation_matrix=numpy.matrix((
+													( c, 0,-s, 0),
+													( 0, 1, 0, 0),
+													( s, 0, c, 0),
+													( 0, 0, 0, 1),
+													))
 
 	def init_gl(self):
 		self.vao=glGenVertexArrays(1)
@@ -106,11 +117,13 @@ class SphericalPanorama(object):
 	def display_gl(self,modelview,projection):
 		self.display_gl_time-=time.time()
 
+		m=numpy.asarray(numpy.matmul(modelview.T,self.azimuth_rotation_matrix).T)
+
 		glBindVertexArray(self.vao)
 		glBindTexture(GL_TEXTURE_2D,self.texture_handle)
 		glUseProgram(self.shader)
 		glUniformMatrix4fv(1,1,False,projection)
-		glUniformMatrix4fv(2,1,False,modelview)
+		glUniformMatrix4fv(2,1,False,m)
 		glDrawArrays(GL_TRIANGLE_STRIP,0,4)
 		glBindVertexArray(0)
 
@@ -125,16 +138,15 @@ class SphericalPanorama(object):
 			glDeleteVertexArrays(1,[self.vao])
 
 class NextImageLinksActor(object):
-	def __init__(self,next_image_links=dict(),center_azimuth_deg=0):
+	def __init__(self,next_image_links=dict()):
 		self.next_image_links=next_image_links
-		self.center_azimuth_deg=center_azimuth_deg
 		self.shader=None
 		self.vao=None
 		self.vbo=None
 		self.last_modelview_matrix=None
 
 	def calc_sprite_point(self,world_azimuth_deg,elevation_deg):
-		az=-math.radians(world_azimuth_deg - (self.center_azimuth_deg + 180))
+		az=-math.radians(world_azimuth_deg)
 		# az=0 means panorama image horizontal wrap point (image x coordinate=0)
 		elevation=math.radians(elevation_deg)
 		return (-math.cos(az) * math.cos(elevation),
@@ -152,7 +164,7 @@ class NextImageLinksActor(object):
 
 	@staticmethod
 	def next_image_link_elevation_deg(distance_meters):
-		return -30 + 3.0*math.log(distance_meters)
+		return -35 + 3.5*math.log(distance_meters)
 
 	def update(self):
 		sprite_vertexes=self.calc_sprite_vertexes(0,25,0.5,10)
@@ -396,11 +408,13 @@ if __name__ == "__main__":
 	else:
 		cur_image_id=0
 
+	center_azimuth_manual_changes=dict()
+
 	img,next_image_links,center_azimuth_deg=go_to_image(cur_image_id)
 	# numpy.save('test',img)
 
-	panorama_actor=SphericalPanorama(img)
-	next_image_links_actor=NextImageLinksActor(next_image_links,center_azimuth_deg)
+	panorama_actor=SphericalPanorama(img,center_azimuth_deg)
+	next_image_links_actor=NextImageLinksActor(next_image_links)
 	renderer=openvr.gl_renderer.OpenVrGlRenderer((panorama_actor,next_image_links_actor))
 
 	with openvr.glframework.glfw_app.GlfwApp(renderer,'Photosphere') as app:
@@ -451,49 +465,66 @@ if __name__ == "__main__":
 
 			if renderer.vr_system.pollNextEvent(ev):
 				if ev.eventType == openvr.VREvent_ButtonPress:
-					print 'button pressed'
+					# print 'button pressed'
 
 					result,controller_state=renderer.vr_system.getControllerState(ev.trackedDeviceIndex)
 					if result:
+						touchpad_button_dir=None
+						if controller_state.ulButtonPressed & (1 << openvr.k_EButton_SteamVR_Touchpad):
+							touchpad_button_dir=(-1 if controller_state.rAxis[0].x < 0 else +1)
+
 						if controller_state.ulButtonPressed & (1 << openvr.k_EButton_ApplicationMenu):
 							print 'Exiting by controller button press'
+							renderer.compositor.compositorQuit()
 							break
-						if controller_state.ulButtonPressed & (1 << openvr.k_EButton_SteamVR_Touchpad):
-							dir=(-1 if controller_state.rAxis[0].x < 0 else +1)
+
+						if controller_state.ulButtonPressed & (1 << openvr.k_EButton_Grip):
+							if touchpad_button_dir:
+								panorama_actor.center_azimuth_deg+=touchpad_button_dir * 3
+								panorama_actor.center_azimuth_deg%=360
+								center_azimuth_manual_changes[cur_image_id]=panorama_actor.center_azimuth_deg
+								print '   Manual change of center_azimuth_deg to %.0fdeg' % \
+																	(panorama_actor.center_azimuth_deg,)
+								panorama_actor.update()
+								next_image_links_actor.update()
+						elif touchpad_button_dir:
 							if cmdline_fnames:
-								cur_image_id+=dir
+								cur_image_id+=touchpad_button_dir
 								cur_image_id%=len(cmdline_fnames)
 							else:
 								sorted_image_ids=sorted(geo_images.keys())
 								idx=sorted_image_ids.index(cur_image_id)
-								cur_image_id=sorted_image_ids[(idx + dir) % len(sorted_image_ids)]
+								cur_image_id=sorted_image_ids[(idx + touchpad_button_dir) % \
+																					len(sorted_image_ids)]
 							panorama_actor.image,next_image_links_actor.next_image_links, \
-									next_image_links_actor.center_azimuth_deg=go_to_image(cur_image_id)
+											panorama_actor.center_azimuth_deg=go_to_image(cur_image_id)
 							panorama_actor.update()
 							next_image_links_actor.update()
-							print 'update() call done'
+							# print 'update() call done'
 						elif controller_state.ulButtonPressed & (1 << openvr.k_EButton_SteamVR_Trigger):
 							next_image_id=next_image_links_actor.select_active_next_image_link()
 							if next_image_id is not None:
 								cur_image_id=next_image_id
 								panorama_actor.image,next_image_links_actor.next_image_links, \
-										next_image_links_actor.center_azimuth_deg=go_to_image(cur_image_id)
+											panorama_actor.center_azimuth_deg=go_to_image(cur_image_id)
 								panorama_actor.update()
 								next_image_links_actor.update()
-								print 'update() call done'
+								# print 'update() call done'
 						else:
 							print 'some other button pressed',controller_state.ulButtonPressed
 							# print renderer.compositor.forceReconnectProcess()
 							# print 'forceReconnectProcess() done'
 
 			frames_displayed+=1
-			if (frames_displayed % 50) == 0 and frames_displayed:
-				# print getposes_time		#!!!
+			print_interval_frames=200
+			if (frames_displayed % print_interval_frames) == 0 and frames_displayed:
+				# print getposes_time
 				cur_time=time.time()
 
 				time_passed=cur_time - last_print_time
 				print 'Image #%d, %d frames displayed, %.0ffps, display_gl() takes %.0f%% of time' % \
-												(cur_image_id,frames_displayed,50 / float(time_passed),
+												(cur_image_id,frames_displayed,
+												print_interval_frames / float(time_passed),
 												panorama_actor.display_gl_time * 100 / float(time_passed))
 				# print ' '.join(','.join(map(str,tim)) for tim in render_times_ms)
 
@@ -503,3 +534,8 @@ if __name__ == "__main__":
 				render_times_ms=[]
 
 		print 'Exiting'
+
+		if center_azimuth_manual_changes:
+			print 'Manual center_azimuth_deg changes summary:'
+			for id,center_azimuth_deg in center_azimuth_manual_changes.items():
+				print 'ID %d %.0fdeg' % (id,center_azimuth_deg)
