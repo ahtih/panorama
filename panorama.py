@@ -121,7 +121,7 @@ class ImageKeypoints:
 			self.img=None
 
 	def add_channel(self,img):
-		global KEYPOINT_BLOCKS
+		global KEYPOINT_BLOCKS,detector_patch_size
 
 		if len(img.shape) >= 3:
 			img=cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
