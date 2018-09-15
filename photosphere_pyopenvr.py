@@ -144,7 +144,23 @@ class NextImageLinksActor(object):
 		self.vao=None
 		self.vbo=None
 		self.last_modelview_matrix=None
-		self.texture_image=numpy.array(Image.open('orange-donut.png'))
+		self.texture_images_list=[]
+
+		self.next_image_sprite=numpy.array(Image.open('orange-donut.png'))
+		self.north_sprite=numpy.array(Image.open('north.png'))
+
+		self.texture_images_list.append(self.next_image_sprite)
+		self.texture_images_list.append(self.north_sprite)
+
+	def calc_texture_coords(self,sprite_image_numpy,x_fraction,y_fraction):
+		base_y=0
+		for img in self.texture_images_list:
+			if img.__array_interface__['data'] == sprite_image_numpy.__array_interface__['data']:
+				return (x_fraction * img.shape[1] / float(self.texture_image_shape[1]),
+						(base_y + (1-y_fraction) * img.shape[0]) / float(self.texture_image_shape[0]))
+			base_y+=img.shape[0]
+
+		return None
 
 	def calc_sprite_point(self,world_azimuth_deg,elevation_deg):
 		az=-math.radians(world_azimuth_deg)
@@ -155,13 +171,18 @@ class NextImageLinksActor(object):
 				math.sin(az) * math.cos(elevation),
 				1)
 
-	def calc_sprite_vertexes(self,world_azimuth_deg,elevation_deg,x_size_deg,y_size_deg):
+	def calc_sprite_vertexes(self,sprite_image_numpy,world_azimuth_deg,elevation_deg,size_deg):
+		diagonal_pixels=math.sqrt(sprite_image_numpy.shape[0]**2 + sprite_image_numpy.shape[1]**2)
+
+		x_size_deg=size_deg * sprite_image_numpy.shape[1] / float(diagonal_pixels)
+		y_size_deg=size_deg * sprite_image_numpy.shape[0] / float(diagonal_pixels)
+
 		vertexes=[]
-		for offset_x,offset_y in (	(-1,-1),(-1,+1),(+1,+1),	# Triangle 1
-									(+1,+1),(-1,-1),(+1,-1)):	# Triangle 2
-			vertexes.append(self.calc_sprite_point(world_azimuth_deg + 0.5*offset_x*x_size_deg,
-													elevation_deg + 0.5*offset_y*y_size_deg) + \
-							((offset_x + 1)*0.5,(offset_y + 1)*0.5))
+		for offset_x,offset_y in (	(0,0),(0,1),(1,1),	# Triangle 1
+									(1,1),(0,0),(1,0)):	# Triangle 2
+			vertexes.append(self.calc_sprite_point(world_azimuth_deg + (offset_x-0.5)*x_size_deg,
+													elevation_deg + (offset_y-0.5)*y_size_deg) + \
+							self.calc_texture_coords(sprite_image_numpy,offset_x,offset_y))
 		return vertexes
 
 	@staticmethod
@@ -169,12 +190,39 @@ class NextImageLinksActor(object):
 		return -35 + 3.5*math.log(distance_meters)
 
 	def update(self):
-		sprite_vertexes=self.calc_sprite_vertexes(0,25,0.5,10)
+
+			# Create combined texture image from sprites
+
+		combined_texture_width=0
+		for img_numpy in self.texture_images_list:
+			combined_texture_width=max(combined_texture_width,img_numpy.shape[1])
+
+		texture_image=numpy.concatenate([numpy.pad(img_numpy,
+												((0,0),(0,combined_texture_width-img_numpy.shape[1]),(0,0)),
+												'constant') \
+														for img_numpy in self.texture_images_list],0)
+		self.texture_image_shape=texture_image.shape
+
+		glBindTexture(GL_TEXTURE_2D,self.texture_handle)
+		glTexParameterf(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR)
+		glTexParameterf(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR)
+		glTexImage2D(GL_TEXTURE_2D,
+					 0,
+					 GL_RGBA8,
+					 texture_image.shape[1], # width
+					 texture_image.shape[0], # height
+					 0,
+					 GL_RGBA,
+					 GL_UNSIGNED_BYTE,
+					 texture_image)
+		glBindTexture(GL_TEXTURE_2D,0)
+
+		sprite_vertexes=self.calc_sprite_vertexes(self.north_sprite,0,25,5)
 
 		for distance_meters,world_azimuth_deg in self.next_image_links.values():
-			size_deg=max(0.5,5 - 0.3*math.log(distance_meters))
-			sprite_vertexes+=self.calc_sprite_vertexes(world_azimuth_deg,
-									self.next_image_link_elevation_deg(distance_meters),size_deg,size_deg)
+			size_deg=max(0.7,8 - 0.5*math.log(distance_meters))
+			sprite_vertexes+=self.calc_sprite_vertexes(self.next_image_sprite,world_azimuth_deg,
+									self.next_image_link_elevation_deg(distance_meters),size_deg)
 
 		self.vbo.set_array(numpy.array(sprite_vertexes,'f'))
 
@@ -202,21 +250,6 @@ class NextImageLinksActor(object):
 		self.vbo=OpenGL.arrays.vbo.VBO(numpy.array([],'f'))
 
 		self.texture_handle=glGenTextures(1)
-		glBindTexture(GL_TEXTURE_2D,self.texture_handle)
-		glTexParameterf(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR)
-		glTexParameterf(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR)
-		glTexParameterf(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_REPEAT)
-		glTexParameterf(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_MIRRORED_REPEAT)
-		glTexImage2D(GL_TEXTURE_2D,
-					 0,
-					 GL_RGBA8,
-					 self.texture_image.shape[1], # width
-					 self.texture_image.shape[0], # height
-					 0,
-					 GL_RGBA,
-					 GL_UNSIGNED_BYTE,
-					 self.texture_image)
-		glBindTexture(GL_TEXTURE_2D,0)
 
 		self.update()
 
@@ -417,7 +450,7 @@ def go_to_image(id):
 	img=load_image(cmdline_fnames[id] if cmdline_fnames else id)
 
 	if not cmdline_fnames:
-		print 'Next image links:'
+		# print 'Next image links:'
 
 		next_image_links=dict()
 		for id in select_next_image_links(cur_image_id):
@@ -458,7 +491,7 @@ if __name__ == "__main__":
 		display_gl_time=0
 		getposes_time=0
 
-		poses_t=openvr.TrackedDevicePose_t * openvr.k_unMaxTrackedDeviceCount	#!!!!
+		poses_t=openvr.TrackedDevicePose_t * openvr.k_unMaxTrackedDeviceCount	#!!!
 		poses=poses_t()
 
 		render_times_ms=[]
