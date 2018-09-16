@@ -341,8 +341,16 @@ def find_matches(img1,img2):
 
 	return (debug_str,matched_points,best_score,best_count,best_angle_deg,best_xd,best_yd)
 
+def write_dynamodb_item(item):
+	global DYNAMODB_TABLE_NAME,aws_session
+
+	table=aws_session.resource('dynamodb').Table(DYNAMODB_TABLE_NAME)
+	table.put_item(Item=item)
+
 def process_match_and_write_to_dynamodb(processing_batch_key,s3_fname1,s3_fname2,
 																		orig_fname1=None,orig_fname2=None):
+	global S3_KEYPOINTS_BUCKET_NAME
+
 	img1=ImageKeypoints(s3_fname1,False,S3_KEYPOINTS_BUCKET_NAME)
 	img2=ImageKeypoints(s3_fname2,False,S3_KEYPOINTS_BUCKET_NAME)
 
@@ -365,8 +373,7 @@ def process_match_and_write_to_dynamodb(processing_batch_key,s3_fname1,s3_fname2
 		for idx,attr_name in enumerate(('score','count','angle_deg','xd','yd')):
 			item[attr_name]=decimal.Decimal(str(result[2 + idx]))
 
-	table=aws_session.resource('dynamodb').Table(DYNAMODB_TABLE_NAME)
-	table.put_item(Item=item)
+	write_dynamodb_item(item)
 
 def get_focal_length_35mm(fname):
 	tags=exif.read_exif(fname)

@@ -130,4 +130,21 @@ else:
 			print 'Timeout - Lambda functions not progressing'
 			exit(1)
 
+	first_error_text=None
+	error_count=0
+	non_error_results=[]
+
+	for match_result in match_results:
+		error_text=match_result.get('error')
+		if error_text is None:
+			non_error_results.append(match_result)
+		else:
+			error_count+=1
+			if first_error_text is None:
+				first_error_text=error_text
+
+	if error_count:
+		print '%d pairwise matches produced errors, first error is here:' % (error_count,)
+		print first_error_text
+
 	write_output_file(match_results,keyword_args.get('--output-fname'))

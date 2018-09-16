@@ -31,14 +31,27 @@
 # 5. periodically poll DynamoDB using Query with partition key until all match records are in DynamoDB
 # 6. read all match records from DynamoDB, run classifier and generate XML file
 
-import json,panorama
+import random,traceback,json,panorama
 
 panorama.init_aws_session()
 
 def match_images(event):
-	panorama.process_match_and_write_to_dynamodb(event['processing_batch_key'],
-					event['s3_fname1'],event['s3_fname2'],event['orig_fname1'],event['orig_fname2'])
-	return 'OK'
+	processing_batch_key=event['processing_batch_key']
+
+	dynamodb_secondary_key=None
+
+	try:
+		dynamodb_secondary_key=event['s3_fname1'] + '_' + event['s3_fname2']
+		panorama.process_match_and_write_to_dynamodb(processing_batch_key,
+						event['s3_fname1'],event['s3_fname2'],event['orig_fname1'],event['orig_fname2'])
+		return 'OK'
+	except:
+		error_text=traceback.format_exc(20)
+		error_item={'processing_batch_key': processing_batch_key,
+					's3_filenames': dynamodb_secondary_key or str(random.randint(0,2**32-1)),
+					'error': error_text}
+		panorama.write_dynamodb_item(error_item)
+		return error_text
 
 def spawn_match_images_tasks(event):
 	processing_batch_key=event['processing_batch_key']
