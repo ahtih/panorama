@@ -2,7 +2,7 @@
 
 DESTDIR=viewable-images
 
-id=`echo $1 | tr -d --complement '0123456789'`
+id=`echo $1 | tr -d --complement '0123456789' | sed -e 's/^0*//' `
 orig_size=`identify $1 | head -1 | cut -d' ' -f3 | cut -dx -f1`
 
 mkdir $DESTDIR/$id
