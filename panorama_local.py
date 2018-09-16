@@ -273,11 +273,11 @@ elif len(positional_args) == 1:
 	else:
 		ikp.show_img_with_keypoints(0)
 else:
-	image_fnames=positional_args
-
 	if '--dynamodb' in keyword_args:
-		process_match_and_write_to_dynamodb(*image_fnames[:2])
+		panorama.process_match_and_write_to_dynamodb(*positional_args)
 		exit(0)
+
+	image_fnames=positional_args
 
 	images_with_keypoints=[panorama.ImageKeypoints(fname,True,(panorama.aws_session is not None)) \
 																				for fname in image_fnames]
