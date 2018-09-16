@@ -334,7 +334,7 @@ def find_matches(img1,img2):
 		else:
 			representative_xy_pairs.append(xy + matches[i][3:] + (i,))
 			matched_points.append((img1.degrees_to_pixels(*xy) + img2.degrees_to_pixels(*matches[i][3:])))
-			if len(representative_xy_pairs) >= 15:
+			if len(representative_xy_pairs) >= 50:
 				break
 
 	# img1.show_img_with_keypoints([matches[xy_pair[4]].queryIdx for xy_pair in representative_xy_pairs])
