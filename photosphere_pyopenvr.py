@@ -463,11 +463,12 @@ def process_KML_feature(e):
 
 	if hasattr(e,'geometry'):
 		if isinstance(e.geometry,shapely.geometry.point.Point) and is_valid_image_id(e.name):
-			center_azimuth_deg=0
+			center_azimuth_deg=None
 			if hasattr(e,'description'):
 				if e.description:
 					center_azimuth_deg=float(e.description.partition('deg')[0])
-			geo_images[int(e.name)]=tuple(e.geometry.coords[0][:2]) + (center_azimuth_deg,)
+			if center_azimuth_deg is not None:
+				geo_images[int(e.name)]=tuple(e.geometry.coords[0][:2]) + (center_azimuth_deg,)
 
 def load_geo_images_list():
 	k=fastkml.KML()
@@ -491,7 +492,7 @@ def go_to_image(id):
 			next_image_links[id]=(distance_meters,azimuth_deg)
 			# print '   ',id,int(distance_meters),int(azimuth_deg)
 
-	return (img,next_image_links,geo_images[cur_image_id][2])
+	return (img,next_image_links,geo_images.get(cur_image_id,(None,None,0))[2])
 
 if __name__ == "__main__":
 	import sys
