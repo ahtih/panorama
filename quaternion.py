@@ -1,4 +1,4 @@
-import math
+import math,numpy
 
 class Quaternion(list):
 	def __init__(self,w,q1,q2,q3):
@@ -55,6 +55,34 @@ class Quaternion(list):
 
 	def total_rotation_angle_deg(self):
 		return math.degrees(self.total_rotation_angle())
+
+	def to_matrix(self):
+		# Returns a post-multiplication active rotation matrix
+
+		m=numpy.zeros((3,3))
+
+		q_squares=[v*v for v in self]
+
+		m[0,0]=1 - 2*(q_squares[2] + q_squares[3])
+		m[1,1]=1 - 2*(q_squares[1] + q_squares[3])
+		m[2,2]=1 - 2*(q_squares[1] + q_squares[2])
+
+		a=self[1] * self[2]
+		b=self[0] * self[3]
+		m[0,1]=2*(a + b)
+		m[1,0]=2*(a - b)
+
+		a=self[1] * self[3]
+		b=self[0] * self[2]
+		m[0,2]=2*(a - b)
+		m[2,0]=2*(a + b)
+
+		a=self[2] * self[3]
+		b=self[0] * self[1]
+		m[1,2]=2*(a + b)
+		m[2,1]=2*(a - b)
+
+		return m
 
 if __name__ == '__main__':
 	import sys,panorama

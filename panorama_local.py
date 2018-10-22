@@ -1,8 +1,8 @@
 #!/usr/bin/python
 # -*- encoding: latin-1 -*-
 
-import sys,operator,re,os.path,xml.sax.handler,xml.sax,gc,itertools,multiprocessing
-import panorama,iterative_optimiser
+import sys,operator,re,os.path,gc,itertools,multiprocessing
+import panorama,kolor_xml_file,iterative_optimiser
 
 max_procs=8	#!!!
 
@@ -98,52 +98,13 @@ if not positional_args:
 
 	exit(1)
 
-correct_matches=None
 testcase_fnames=keyword_args.get('--testcase-fname')
 if testcase_fnames:
 	if not isinstance(testcase_fnames,list):
 		testcase_fnames=(testcase_fnames,)
 
-	correct_matches=dict()
-	image_quaternions=dict()
-
-	class kolor_xml_handler(xml.sax.handler.ContentHandler):
-		def __init__(self):
-			self.image_fnames=[]
-			self.cur_image_quaternion=None
-
-		def startElement(self,name,attrs):
-			global correct_matches,basename_correct_matches
-
-			if name == 'image':
-				self.cur_image_quaternion=None
-			elif name == 'def':
-				fname=attrs.get('filename')
-				for fname2 in self.image_fnames:
-					img_fnames=(fname,fname2)
-					correct_matches[tuple(sorted(img_fnames))]=False
-					correct_matches[tuple(sorted(map(os.path.basename,img_fnames)))]=False
-				self.image_fnames.append(fname)
-			elif name == 'camera':
-				self.cur_image_quaternion=panorama.quaternion_from_kolor_file(
-											*[float(attrs.get(name,0)) for name in ('yaw','pitch','roll')])
-			elif name == 'match':
-				img_fnames=[self.image_fnames[int(attrs.get(attr))] for attr in ('image1','image2')]
-				correct_matches[tuple(sorted(img_fnames))]=True
-				correct_matches[tuple(sorted(map(os.path.basename,img_fnames)))]=True
-
-		def endElement(self,name):
-			if name == 'image':
-				if self.cur_image_quaternion is not None:
-					fname=self.image_fnames[-1]
-					image_quaternions[fname]=self.cur_image_quaternion
-					image_quaternions[os.path.basename(fname)]=self.cur_image_quaternion
-					self.cur_image_quaternion=None
-
 	for testcase_fname in testcase_fnames:
-		parser=xml.sax.make_parser()
-		parser.setContentHandler(kolor_xml_handler())
-		parser.parse(open(testcase_fname,'r'))
+		kolor_xml_file.read_kolor_xml_file(testcase_fname)
 
 	print_training_data=('--print-training-data' in keyword_args)
 	training_data=[]
@@ -196,15 +157,15 @@ if testcase_fnames:
 		triplets_input=dict()
 		for fnames_pair,line,angle_deg,count,score,x_shift,y_shift in \
 															read_lowlevel_matches_from_file(matches_name):
-			match_exists_in_testcase=correct_matches.get(tuple(sorted(fnames_pair)))
-			if match_exists_in_testcase is None:
+			testcase_match_points=kolor_xml_file.matches.get(tuple(sorted(fnames_pair)))
+			if testcase_match_points is None:
 				if '--nowarn' not in keyword_args:
 					print 'Warning: image pair %s %s not present in testcases' % tuple(fnames_pair)
 				continue
 
 			if score > 0:
-				correct_match_rot=image_quaternions[fnames_pair[0]].rotation_to_b(
-																		image_quaternions[fnames_pair[1]])
+				correct_match_rot=kolor_xml_file.image_quaternions[fnames_pair[0]].rotation_to_b(
+														kolor_xml_file.image_quaternions[fnames_pair[1]])
 				detected_match_rot=panorama.quaternion_from_match_angles(angle_deg,x_shift,y_shift)
 				rotation_error_deg=correct_match_rot.rotation_to_b(detected_match_rot). \
 																				total_rotation_angle_deg()
@@ -218,9 +179,9 @@ if testcase_fnames:
 				triplets_input[fnames_pair]=(detected_match_rot,match_metrics)
 			else:
 				tries+=1
-				correct_predictions_with_zero_score+=int(not match_exists_in_testcase)
-				if not print_training_data and match_exists_in_testcase:
-					print match_exists_in_testcase,-1.11111,line
+				correct_predictions_with_zero_score+=int(not testcase_match_points)
+				if not print_training_data and testcase_match_points:
+					print True,-1.11111,line
 
 		triplet_scores=panorama.calc_triplet_scores(triplets_input)
 
