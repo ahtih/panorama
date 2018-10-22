@@ -66,6 +66,28 @@ epsilon_angle_rad=0.3 / float(3000)
 epsilon_rotation_matrices=(	euler_angles_to_matrix((epsilon_angle_rad,0,0)),
 							euler_angles_to_matrix((0,epsilon_angle_rad,0)),
 							euler_angles_to_matrix((0,0,epsilon_angle_rad)))
+epsilon_2axes_rad=epsilon_angle_rad / math.sqrt(2.0)
+alt_epsilon_rotation_matrices=(
+							euler_angles_to_matrix((-epsilon_angle_rad,0,0)),
+							euler_angles_to_matrix((0,-epsilon_angle_rad,0)),
+							euler_angles_to_matrix((0,0,-epsilon_angle_rad)),
+
+							euler_angles_to_matrix((epsilon_2axes_rad,epsilon_2axes_rad,0)),
+							euler_angles_to_matrix((0,epsilon_2axes_rad,epsilon_2axes_rad)),
+							euler_angles_to_matrix((epsilon_2axes_rad,0,epsilon_2axes_rad)),
+
+							euler_angles_to_matrix((epsilon_2axes_rad,-epsilon_2axes_rad,0)),
+							euler_angles_to_matrix((0,epsilon_2axes_rad,-epsilon_2axes_rad)),
+							euler_angles_to_matrix((epsilon_2axes_rad,0,-epsilon_2axes_rad)),
+
+							euler_angles_to_matrix((-epsilon_2axes_rad,epsilon_2axes_rad,0)),
+							euler_angles_to_matrix((0,-epsilon_2axes_rad,epsilon_2axes_rad)),
+							euler_angles_to_matrix((-epsilon_2axes_rad,0,epsilon_2axes_rad)),
+
+							euler_angles_to_matrix((-epsilon_2axes_rad,-epsilon_2axes_rad,0)),
+							euler_angles_to_matrix((0,-epsilon_2axes_rad,-epsilon_2axes_rad)),
+							euler_angles_to_matrix((-epsilon_2axes_rad,0,-epsilon_2axes_rad)),
+							)
 
 def keypoint_pixels_to_vec3(x,y,focal_length_pixels,image_size):
 	if x < 0 or x >= image_size[0] or y < 0 or y >= image_size[1]:
@@ -112,11 +134,9 @@ def set_keypoints_for_other_images(image_fname):
 						projected_keypoints[image1_start_point_idx:(image1_start_point_idx+nr_of_points),:]
 		image1_start_point_idx+=nr_of_points
 
-def try_optimise_direction(direction_vector,cur_error,image1_keypoints,other_images_projected_keypoints,
+def try_optimise_direction(gradient_matrix,cur_error,image1_keypoints,other_images_projected_keypoints,
 																		image1_matrix,max_rotation_rad):
 	global epsilon_angle_rad
-
-	gradient_matrix=euler_angles_to_matrix(direction_vector * epsilon_angle_rad)
 
 	iterations=0
 	best_error=cur_error
@@ -143,13 +163,32 @@ def try_optimise_direction(direction_vector,cur_error,image1_keypoints,other_ima
 
 		gradient_matrix=gradient_matrix * gradient_matrix
 
-	if image_fname == 'IMG_3817.JPG':	#!!!!
-		print direction_vector,i
-
 	return (iterations,best_m,best_error,best_rot_rad,best_rot_amount)
 
+def calc_optimisation_gradient(cur_error,image1_matrix,image1_keypoints,other_images_projected_keypoints,
+																					axis_rotation_matrices):
+	gradient=[]
+
+	best_fitness_improvement=0
+	best_direction_axis=None
+	iterations=0
+
+	for axis,axis_rotation_matrix in enumerate(axis_rotation_matrices):
+		iterations+=1
+
+		m=image1_matrix * axis_rotation_matrix
+		fitness_improvement=cur_error - calc_image_pair_fitness(image1_keypoints,
+																		other_images_projected_keypoints,m)
+		gradient.append(fitness_improvement)
+
+		if best_fitness_improvement < fitness_improvement:
+			best_fitness_improvement= fitness_improvement
+			best_direction_axis=axis
+
+	return (iterations,gradient,best_direction_axis)
+
 def optimise_image_rot(image_fname,max_rotation_rad=None):
-	global epsilon_angle_rad,epsilon_rotation_matrices
+	global epsilon_angle_rad,epsilon_rotation_matrices,alt_epsilon_rotation_matrices
 
 	image1_keypoints,other_images_projected_keypoints,image1_matrix=images[image_fname][:3]
 
@@ -162,24 +201,46 @@ def optimise_image_rot(image_fname,max_rotation_rad=None):
 		print
 
 	while max_rotation_rad is None or cumulative_rot_rad < max_rotation_rad:
-		gradient_direction=[]
-		for axis in range(3):
-			iterations+=1
 
-			m=image1_matrix * epsilon_rotation_matrices[axis]
-			gradient_direction.append(cur_error - calc_image_pair_fitness(image1_keypoints,
-																		other_images_projected_keypoints,m))
+		_iterations,gradient_direction,best_direction_axis=calc_optimisation_gradient(
+												cur_error,image1_matrix,image1_keypoints,
+												other_images_projected_keypoints,epsilon_rotation_matrices)
+		iterations+=_iterations
 
 		gradient_direction=normalise(numpy.array(gradient_direction))
 
 		_iterations,best_m,best_error,best_rot_rad,best_rot_amount=try_optimise_direction(
-							gradient_direction,cur_error,image1_keypoints,
+							euler_angles_to_matrix(gradient_direction * epsilon_angle_rad),
+							cur_error,image1_keypoints,
 							other_images_projected_keypoints,image1_matrix,
 							max_rotation_rad-cumulative_rot_rad if max_rotation_rad is not None else None)
 		iterations+=_iterations
 
-		if best_m is None:
+		if best_m is None and best_direction_axis is not None:
 			# print '   ',gradient_direction
+
+			_iterations,best_m,best_error,best_rot_rad,best_rot_amount=try_optimise_direction(
+							epsilon_rotation_matrices[best_direction_axis],
+							cur_error,image1_keypoints,
+							other_images_projected_keypoints,image1_matrix,
+							max_rotation_rad-cumulative_rot_rad if max_rotation_rad is not None else None)
+			iterations+=_iterations
+
+		if best_m is None:
+			_iterations,gradient_direction,best_direction_axis=calc_optimisation_gradient(
+											cur_error,image1_matrix,image1_keypoints,
+											other_images_projected_keypoints,alt_epsilon_rotation_matrices)
+			iterations+=_iterations
+
+			if best_direction_axis is not None:
+				_iterations,best_m,best_error,best_rot_rad,best_rot_amount=try_optimise_direction(
+							alt_epsilon_rotation_matrices[best_direction_axis],
+							cur_error,image1_keypoints,
+							other_images_projected_keypoints,image1_matrix,
+							max_rotation_rad-cumulative_rot_rad if max_rotation_rad is not None else None)
+				iterations+=_iterations
+
+		if best_m is None:
 			break
 
 		cur_error=best_error
