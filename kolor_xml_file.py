@@ -18,6 +18,7 @@ def read_kolor_xml_file(fname,reset_globals=False):
 		def __init__(self):
 			self.image_fnames=[]
 			self.cur_image_quaternion=None
+			self.cur_image_fname=None
 
 		@staticmethod
 		def calc_filename_indexes(img_fnames):
@@ -30,11 +31,11 @@ def read_kolor_xml_file(fname,reset_globals=False):
 			if name == 'image':
 				self.cur_image_quaternion=None
 			elif name == 'def':
-				fname=attrs.get('filename')
+				self.cur_image_fname=attrs.get('filename')
 				for fname2 in self.image_fnames:
-					for idx in self.calc_filename_indexes((fname,fname2)):
+					for idx in self.calc_filename_indexes((self.cur_image_fname,fname2)):
 						matches[idx]=False
-				self.image_fnames.append(fname)
+				self.image_fnames.append(self.cur_image_fname)
 			elif name == 'camera':
 				self.cur_image_quaternion=panorama.quaternion_from_kolor_file(
 											*[float(attrs.get(name,0)) for name in ('yaw','pitch','roll')])
@@ -50,10 +51,12 @@ def read_kolor_xml_file(fname,reset_globals=False):
 			global image_quaternions
 
 			if name == 'image':
-				fname=self.image_fnames[-1]
-				image_quaternions[fname]=self.cur_image_quaternion
-				image_quaternions[os.path.basename(fname)]=self.cur_image_quaternion
-				self.cur_image_quaternion=None
+				if self.cur_image_fname is not None:
+					fname=self.image_fnames[-1]
+					image_quaternions[fname]=self.cur_image_quaternion
+					image_quaternions[os.path.basename(fname)]=self.cur_image_quaternion
+					self.cur_image_quaternion=None
+					self.cur_image_fname=None
 			elif name == 'match':
 				for idx in self.match_indexes:
 					matches[idx]=tuple(self.cur_match_points)
