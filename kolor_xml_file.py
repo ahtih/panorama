@@ -50,11 +50,10 @@ def read_kolor_xml_file(fname,reset_globals=False):
 			global image_quaternions
 
 			if name == 'image':
-				if self.cur_image_quaternion is not None:
-					fname=self.image_fnames[-1]
-					image_quaternions[fname]=self.cur_image_quaternion
-					image_quaternions[os.path.basename(fname)]=self.cur_image_quaternion
-					self.cur_image_quaternion=None
+				fname=self.image_fnames[-1]
+				image_quaternions[fname]=self.cur_image_quaternion
+				image_quaternions[os.path.basename(fname)]=self.cur_image_quaternion
+				self.cur_image_quaternion=None
 			elif name == 'match':
 				for idx in self.match_indexes:
 					matches[idx]=tuple(self.cur_match_points)
