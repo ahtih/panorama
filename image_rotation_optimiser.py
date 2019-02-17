@@ -44,6 +44,13 @@ euler_angle_unit_matrices=(	numpy.array([
 def normalise(v):
 	return v / numpy.linalg.norm(v)
 
+def acos_degrees(value):
+	if value >= 1:
+		return 0
+	if value <= -1:
+		return 180
+	return math.degrees(math.acos(value))
+
 def matrix_to_kolor_file_angles(m):
 	# Returns values in radians
 	#!!! Do we need to handle specially the singular matrix case where sqrt is 0?
@@ -355,8 +362,7 @@ if __name__ == '__main__':
 
 		avg_error=sum(map(operator.itemgetter(4),images.values())) / \
 											sum([len(image_record[3]) for image_record in images.values()])
-		print '%u total iterations, avg error %.2fdeg' % \
-													(total_iterations,math.degrees(math.acos(1-avg_error)))
+		print '%u total iterations, avg error %.2fdeg' % (total_iterations,acos_degrees(1-avg_error))
 
 		for image_fname in image_basenames:
 			m=images[image_fname][2]
