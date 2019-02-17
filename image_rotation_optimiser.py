@@ -55,9 +55,9 @@ def matrix_to_kolor_file_angles(m):
 	# Returns values in radians
 	#!!! Do we need to handle specially the singular matrix case where sqrt is 0?
 
-	roll_rad =math.atan2( m[1,2],m[2,2])
-	pitch_rad=math.atan2( m[0,2],math.sqrt(m[0,0]**2 + m[0,1]**2))
-	yaw_rad  =math.atan2(-m[0,1],m[0,0])
+	roll_rad =-math.atan2(-m[2,1],m[2,2])
+	pitch_rad=-math.atan2(-m[2,0],math.sqrt(m[0,0]**2 + m[1,0]**2))
+	yaw_rad  =-math.atan2( m[1,0],m[0,0])
 
 	return (yaw_rad,pitch_rad,roll_rad)
 
@@ -97,9 +97,12 @@ alt_epsilon_rotation_matrices=(
 							)
 
 def keypoint_pixels_to_vec3(x,y,focal_length_pixels,image_size):
+	# Output vector coordinate system is such that X points ahead, Y left, Z up
+
 	if x < 0 or x >= image_size[0] or y < 0 or y >= image_size[1]:
 		print 'Invalid keypoint coordinates',x,y,focal_length_pixels,image_size
-	v=numpy.array([focal_length_pixels,x - image_size[0]/2.0,y - image_size[1]/2.0],'f')
+
+	v=numpy.array([focal_length_pixels,image_size[0]/2.0 - x,image_size[1]/2.0 - y],'f')
 	return normalise(v)
 
 def calc_image_pair_fitness(image1_keypoints,other_images_projected_keypoints,image1_matrix):
@@ -411,8 +414,3 @@ if __name__ == '__main__':
 			print '            <camera yaw="%.5f" pitch="%.5f" roll="%.5f" f="%.2f"/>' % \
 														(kolor_file_angles_rad + (focal_length_pixels,))
 			print '        </image>'
-
-#!!!! minimal-3806-2images-2.pano (06, 07) ja minimal-3806-2images-vert-2.pano (06, 07, 17) toimib, aga
-#		minimal-3806-3images-2links.pano ei toimi nendesama 2 ülemise pildi vahel
-#	Asi paraneb täielikult, kui 3807 fikseerida algpositsioonile (avg error 1.29deg).
-#	Kui 3806 fikseerida, siis 3807 läheb küll õigele kohale, aga 3817 mitte (avg error 1.42deg).

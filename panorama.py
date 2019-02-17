@@ -401,10 +401,10 @@ def quaternion_from_match_angles(angle_deg,x_shift,y_shift):
 
 def quaternion_from_kolor_file(yaw_rad,pitch_rad,roll_rad):
 	# Output quaternion coordinate system is such that X points ahead, Y left, Z up
-	x=Quaternion.from_single_axis_angle(0,-roll_rad)
-	y=Quaternion.from_single_axis_angle(1,+pitch_rad)
-	z=Quaternion.from_single_axis_angle(2,+yaw_rad)
-	return z*y*x
+	x=Quaternion.from_single_axis_angle(0,+roll_rad)
+	y=Quaternion.from_single_axis_angle(1,-pitch_rad)
+	z=Quaternion.from_single_axis_angle(2,-yaw_rad)
+	return x*y*z
 
 def calc_triplet_scores(matches):
 	# Input: matches[image_ids_pair]=(quaternion,match_metrics)
