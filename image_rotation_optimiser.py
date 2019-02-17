@@ -197,9 +197,6 @@ def optimise_image_rot(image_fname,max_rotation_rad=None):
 	iterations=0
 	cumulative_rot_rad=0
 
-	if image_fname == 'IMG_3817.JPG':	#!!!!
-		print
-
 	while max_rotation_rad is None or cumulative_rot_rad < max_rotation_rad:
 
 		_iterations,gradient_direction,best_direction_axis=calc_optimisation_gradient(
@@ -325,15 +322,27 @@ if __name__ == '__main__':
 		for image_fname in images.keys():
 			set_keypoints_for_other_images(image_fname)
 
+		if no_optimise:
+			error_sum=0
+			total_keypoints=0
+			for image_record in images.values():
+				image1_keypoints,other_images_projected_keypoints,image1_matrix,matches=image_record[:4]
+				error_sum+=calc_image_pair_fitness(image1_keypoints,other_images_projected_keypoints,
+																							image1_matrix)
+				total_keypoints+=len(matches)
+
+			print 'Avg error %.2fdeg' % (acos_degrees(1 - error_sum / float(total_keypoints)),)
+
+			# print_keypoint_errors()
+
+			exit(0)
+
 		total_iterations=0
 
 		for i in range(3000):
 			round_iterations=0
 			round_rot_rad=0
 			for image_fname in images.keys():
-				if image_fname == 'IMG_3806.JPG':	#!!!!
-					images[image_fname][4]=0		#!!!
-					continue
 				iterations,rot_rad=optimise_image_rot(image_fname,math.radians(30))
 				round_iterations+=iterations
 				round_rot_rad+=rot_rad
