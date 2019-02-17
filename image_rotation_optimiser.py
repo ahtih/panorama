@@ -114,6 +114,20 @@ def calc_image_pair_fitness(image1_keypoints,other_images_projected_keypoints,im
 	return len(other_images_projected_keypoints) - \
 									numpy.sum(image1_projected_keypoints * other_images_projected_keypoints)
 
+def print_keypoint_errors():
+	global images
+
+	for image_fname in images.keys():
+		image1_keypoints,other_images_projected_keypoints,image1_matrix=images[image_fname][:3]
+		image1_projected_keypoints=numpy.asarray((image1_matrix * image1_keypoints).T)
+
+		cur_error=calc_image_pair_fitness(image1_keypoints,other_images_projected_keypoints,image1_matrix)
+		print '   ',image_fname,cur_error
+
+		for kp_idx in range(len(other_images_projected_keypoints)):
+			dot_product=image1_projected_keypoints[kp_idx].dot(other_images_projected_keypoints[kp_idx])
+			print '        ',kp_idx+1,dot_product,acos_degrees(dot_product),image1_projected_keypoints[kp_idx],other_images_projected_keypoints[kp_idx]
+
 def add_keypoints(fnames_pair,keypoints_lists_pair):
 	global images
 
@@ -261,7 +275,22 @@ def optimise_image_rot(image_fname,max_rotation_rad=None):
 	return (iterations,cumulative_rot_rad)
 
 if __name__ == '__main__':
-	if len(sys.argv) < 1+1:
+	keyword_args={}
+	positional_args=[]
+
+	for arg in sys.argv[1:]:
+		if arg.startswith('--'):
+			keyword,_,value=arg.partition('=')
+			if keyword not in keyword_args:
+				keyword_args[keyword]=value
+			else:
+				if not isinstance(keyword_args[keyword],list):
+					keyword_args[keyword]=[keyword_args[keyword],]
+				keyword_args[keyword].append(value)
+		else:
+			positional_args.append(arg)
+
+	if not positional_args:
 		keypoint_vectors=numpy.stack([numpy.array([0.3,0.3,0.6]) for i in range(30)])
 		keypoint_vectors_matrix=numpy.asmatrix(keypoint_vectors).T
 
@@ -273,7 +302,10 @@ if __name__ == '__main__':
 
 		print error_sum		# -40.2 = 30 * -1.34
 	else:
-		image_basenames=kolor_xml_file.read_kolor_xml_file(sys.argv[1])
+		ignore_input_rotations=('--ignore-input-rotations' in keyword_args)
+		no_optimise=('--no-optimise' in keyword_args)
+
+		image_basenames=kolor_xml_file.read_kolor_xml_file(positional_args[0])
 		focal_length_pixels=2844.49				#!!!
 
 		image_sizes=dict()
@@ -299,7 +331,7 @@ if __name__ == '__main__':
 
 			images[image_fname]=[numpy.asmatrix(numpy.zeros((3,0))),
 								numpy.zeros((0,3)),
-								numpy.matrix(numpy.identity(3)),	#!!! q.to_matrix()
+								numpy.matrix(numpy.identity(3)) if ignore_input_rotations else q.to_matrix(),
 								[],
 								None]
 
@@ -307,8 +339,8 @@ if __name__ == '__main__':
 			if not matches:
 				continue
 
-			#if len(sys.argv) >= 1+1+2:
-			#	if image_pair_idx != tuple(sys.argv[2:]):
+			#if len(positional_args) >= 1+2:
+			#	if image_pair_idx != tuple(positional_args[1:]):
 			#		continue
 
 			if '..' in image_pair_idx[0]:	#!!!
