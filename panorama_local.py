@@ -104,7 +104,7 @@ if testcase_fnames:
 		testcase_fnames=(testcase_fnames,)
 
 	for testcase_fname in testcase_fnames:
-		kolor_xml_file.read_kolor_xml_file(testcase_fname)
+		kolor_xml_file.read_kolor_xml_file(testcase_fname,False,True)
 
 	print_training_data=('--print-training-data' in keyword_args)
 	training_data=[]

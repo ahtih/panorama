@@ -4,9 +4,9 @@ import panorama
 matches=dict()
 image_quaternions=dict()
 
-def read_kolor_xml_file(fname,reset_globals=False):
+def read_kolor_xml_file(fname,reset_globals=False,set_alternative_fnames=False):
 	# Updates globals matches and image_quaternions
-	# Returns list of image file basenames in Kolor file order
+	# Returns list of image full filenames in Kolor file order
 
 	global matches,image_quaternions
 
@@ -22,8 +22,11 @@ def read_kolor_xml_file(fname,reset_globals=False):
 
 		@staticmethod
 		def calc_filename_indexes(img_fnames):
-			return (tuple(sorted(img_fnames)),
-					tuple(sorted(map(os.path.basename,img_fnames))))
+			fname_lists=[img_fnames]
+			if set_alternative_fnames:
+				fname_lists.append(map(os.path.basename,img_fnames))
+
+			return tuple([tuple(sorted(fnames)) for fnames in fname_lists])
 
 		def startElement(self,name,attrs):
 			global matches
@@ -54,7 +57,8 @@ def read_kolor_xml_file(fname,reset_globals=False):
 				if self.cur_image_fname is not None:
 					fname=self.image_fnames[-1]
 					image_quaternions[fname]=self.cur_image_quaternion
-					image_quaternions[os.path.basename(fname)]=self.cur_image_quaternion
+					if set_alternative_fnames:
+						image_quaternions[os.path.basename(fname)]=self.cur_image_quaternion
 					self.cur_image_quaternion=None
 					self.cur_image_fname=None
 			elif name == 'match':
@@ -67,4 +71,4 @@ def read_kolor_xml_file(fname,reset_globals=False):
 	parser.setContentHandler(handler)
 	parser.parse(open(fname,'r'))
 
-	return map(os.path.basename,handler.image_fnames)
+	return handler.image_fnames

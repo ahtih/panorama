@@ -308,7 +308,7 @@ if __name__ == '__main__':
 		ignore_input_rotations=('--ignore-input-rotations' in keyword_args)
 		no_optimise=('--no-optimise' in keyword_args)
 
-		image_basenames=kolor_xml_file.read_kolor_xml_file(positional_args[0])
+		image_full_fnames=kolor_xml_file.read_kolor_xml_file(positional_args[0],True)
 		focal_length_pixels=2844.49				#!!!
 
 		image_sizes=dict()
@@ -319,19 +319,9 @@ if __name__ == '__main__':
 					if os.access(image_fname,os.R_OK):
 						image_sizes[image_fname]=tuple(reversed(cv2.imread(image_fname).shape[:2]))
 
-		for image_pair_idx in kolor_xml_file.matches.keys():
-			for image_fname in image_pair_idx:
-				if image_fname in image_sizes:
-					alt_fname=os.path.basename(image_fname)
-					if alt_fname not in image_sizes:
-						image_sizes[alt_fname]=image_sizes[image_fname]
-
 		images=dict()
 
 		for image_fname,q in kolor_xml_file.image_quaternions.items():
-			if '..' in image_fname:	#!!!
-				continue
-
 			images[image_fname]=[numpy.asmatrix(numpy.zeros((3,0))),
 								numpy.zeros((0,3)),
 								numpy.matrix(numpy.identity(3)) if ignore_input_rotations else q.to_matrix(),
@@ -342,12 +332,9 @@ if __name__ == '__main__':
 			if not matches:
 				continue
 
-			#if len(positional_args) >= 1+2:
+			# if len(positional_args) >= 1+2:
 			#	if image_pair_idx != tuple(positional_args[1:]):
 			#		continue
-
-			if '..' in image_pair_idx[0]:	#!!!
-				continue
 
 			image1_keypoints=[]
 			image2_keypoints=[]
@@ -355,7 +342,7 @@ if __name__ == '__main__':
 			image1_size=image_sizes[image_pair_idx[0]]
 			image2_size=image_sizes[image_pair_idx[1]]
 
-			for x1,y1,x2,y2 in kolor_xml_file.matches[image_pair_idx]:
+			for x1,y1,x2,y2 in matches:
 				image1_keypoints.append(keypoint_pixels_to_vec3(x1,y1,focal_length_pixels,image1_size))
 				image2_keypoints.append(keypoint_pixels_to_vec3(x2,y2,focal_length_pixels,image2_size))
 
@@ -399,18 +386,16 @@ if __name__ == '__main__':
 											sum([len(image_record[3]) for image_record in images.values()])
 		print '%u total iterations, avg error %.2fdeg' % (total_iterations,acos_degrees(1-avg_error))
 
-		for image_fname in image_basenames:
+		for image_fname in image_full_fnames:
 			m=images[image_fname][2]
 			kolor_file_angles_rad=matrix_to_kolor_file_angles(m)
-			# print '%s %+.2f %+.2f %+.2f' % ((image_fname,) + tuple(map(math.degrees,kolor_file_angles_rad)))
-			# print image_fname,math.degrees(math.atan2(m[idx,0],m[idx,1])),math.degrees(math.atan2(m[idx,2],math.sqrt(m[idx,0]**2 + m[idx,1]**2)))
-
-			image_path_prefix='/nas-yhine/vr/'	#!!!!
+			# print '%s %+.2f %+.2f %+.2f' % ((os.path.basename(image_fname),) + tuple(map(math.degrees,kolor_file_angles_rad)))
+			# print os.path.basename(image_fname),math.degrees(math.atan2(m[idx,0],m[idx,1])),math.degrees(math.atan2(m[idx,2],math.sqrt(m[idx,0]**2 + m[idx,1]**2)))
 
 			print '        <image>'
-			print ('            <def filename="%s%s" focal35mm="0" lensModel="0" ' + \
+			print ('            <def filename="%s" focal35mm="0" lensModel="0" ' + \
 										'fisheyeRadius="0" fisheyeCoffX="0" fisheyeCoffY="0"/>') % \
-											(image_path_prefix,image_fname,)
+												(image_fname,)
 			print '            <camera yaw="%.5f" pitch="%.5f" roll="%.5f" f="%.2f"/>' % \
 														(kolor_file_angles_rad + (focal_length_pixels,))
 			print '        </image>'
