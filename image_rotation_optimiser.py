@@ -291,7 +291,7 @@ def add_image(fname,initial_quaternion=None):
 					[],
 					None]
 
-def add_image_pair_match(image_pair_idx,image1_size,image2_size,
+def add_image_pair_match(image_pair_fnames,image1_size,image2_size,
 										image1_focal_length_pixels,image2_focal_length_pixels,matches):
 	if not matches:
 		return
@@ -303,10 +303,13 @@ def add_image_pair_match(image_pair_idx,image1_size,image2_size,
 		image1_keypoints.append(keypoint_pixels_to_vec3(x1,y1,image1_focal_length_pixels,image1_size))
 		image2_keypoints.append(keypoint_pixels_to_vec3(x2,y2,image2_focal_length_pixels,image2_size))
 
-	add_keypoints(image_pair_idx,(image1_keypoints,image2_keypoints))
+	add_keypoints(image_pair_fnames,(image1_keypoints,image2_keypoints))
 
-def optimise_panorama(image_fnames_sequence):
+def optimise_panorama(image_fnames_sequence=None):
 	global images
+
+	if image_fnames_sequence is None:
+		image_fnames_sequence=sorted(images.keys())
 
 	for image_fname in images.keys():
 		set_keypoints_for_other_images(image_fname)
@@ -330,19 +333,11 @@ def optimise_panorama(image_fnames_sequence):
 											sum([len(image_record[3]) for image_record in images.values()])
 	print '%u total iterations, avg error %.2fdeg' % (total_iterations,acos_degrees(1-avg_error))
 
-	for image_fname in image_fnames_sequence:
-		m=images[image_fname][2]
-		kolor_file_angles_rad=matrix_to_kolor_file_angles(m)
-		# print '%s %+.2f %+.2f %+.2f' % ((os.path.basename(image_fname),) + tuple(map(math.degrees,kolor_file_angles_rad)))
-		# print os.path.basename(image_fname),math.degrees(math.atan2(m[idx,0],m[idx,1])),math.degrees(math.atan2(m[idx,2],math.sqrt(m[idx,0]**2 + m[idx,1]**2)))
+def get_image_kolor_file_angles_rad(fname):
+	global images
 
-		print '        <image>'
-		print ('            <def filename="%s" focal35mm="0" lensModel="0" ' + \
-										'fisheyeRadius="0" fisheyeCoffX="0" fisheyeCoffY="0"/>') % \
-												(image_fname,)
-		print '            <camera yaw="%.5f" pitch="%.5f" roll="%.5f" f="%.2f"/>' % \
-														(kolor_file_angles_rad + (focal_length_pixels,))
-		print '        </image>'
+	m=images[fname][2]
+	return matrix_to_kolor_file_angles(m)
 
 if __name__ == '__main__':
 	keyword_args={}
@@ -420,3 +415,17 @@ if __name__ == '__main__':
 			exit(0)
 
 		optimise_panorama(image_fnames_sequence)
+
+		for image_fname in image_fnames_sequence:
+			m=images[image_fname][2]
+			kolor_file_angles_rad=matrix_to_kolor_file_angles(m)
+			# print '%s %+.2f %+.2f %+.2f' % ((os.path.basename(image_fname),) + tuple(map(math.degrees,kolor_file_angles_rad)))
+			# print os.path.basename(image_fname),math.degrees(math.atan2(m[idx,0],m[idx,1])),math.degrees(math.atan2(m[idx,2],math.sqrt(m[idx,0]**2 + m[idx,1]**2)))
+
+			print '        <image>'
+			print ('            <def filename="%s" focal35mm="0" lensModel="0" ' + \
+										'fisheyeRadius="0" fisheyeCoffX="0" fisheyeCoffY="0"/>') % \
+												(image_fname,)
+			print '            <camera yaw="%.5f" pitch="%.5f" roll="%.5f" f="%.2f"/>' % \
+														(kolor_file_angles_rad + (focal_length_pixels,))
+			print '        </image>'

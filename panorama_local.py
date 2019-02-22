@@ -247,9 +247,12 @@ else:
 	if output_fname:
 		output_fd=open(output_fname,'wt')
 
-	panorama.write_output_file_header(output_fd,
-									[(fname,img.focal_length_35mm,img.channel_keypoints) \
-												for fname,img in zip(image_fnames,images_with_keypoints)]
-									)
+	panorama.write_output_file_header(output_fd)
+
+	for fname,img in zip(image_fnames,images_with_keypoints):
+		write_output_file_image(output_fd,fname,img.focal_length_35mm,img.channel_keypoints)
+
+	write_output_file_midsection(output_fd,len(image_fnames))
+
 	print_matches_for_images(output_fd)
 	panorama.write_output_file_footer(output_fd)

@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- encoding: latin-1 -*-
 
-import sys,os.path,time,random,json,socket,boto3,panorama
+import sys,os.path,time,random,json,socket,boto3,panorama,image_rotation_optimiser
 
 def get_match_results(processing_batch_key):
 	try:
@@ -15,8 +15,11 @@ def get_match_results(processing_batch_key):
 	return query_result.get('Items',tuple())
 
 def write_output_file(match_results,output_fname=None):
-	images=[]
+	images=[]		# (fname,focal_length_35mm,channel_keypoints)
 	fname_to_idx={}
+
+	image_rotation_optimiser.clear_images()
+
 	for match_result in match_results:
 		for key_prefix in ('img1_','img2_'):
 			fname=match_result.get(key_prefix + 'fname')
@@ -24,18 +27,19 @@ def write_output_file(match_results,output_fname=None):
 				continue
 			fname_to_idx[fname]=len(images)
 			images.append((fname,float(match_result[key_prefix + 'focal_length_35mm']),
-													map(int,match_result[key_prefix + 'channel_keypoints'])))
+												map(int,match_result[key_prefix + 'channel_keypoints'])))
 
-	output_fd=sys.stdout
-	if output_fname:
-		output_fd=open(output_fname,'wt')
+			image_rotation_optimiser.add_image(fname)
 
-	panorama.write_output_file_header(output_fd,images)
+	focal_length_pixels=2844.49				#!!!!
 
 	matches=[]
 	for match_result in match_results:
-		idx1=fname_to_idx.get(match_result.get('img1_fname'))
-		idx2=fname_to_idx.get(match_result.get('img2_fname'))
+		fname1=match_result.get('img1_fname')
+		fname2=match_result.get('img2_fname')
+
+		idx1=fname_to_idx.get(fname1)
+		idx2=fname_to_idx.get(fname2)
 		if idx1 is None or idx2 is None:
 			continue
 
@@ -43,16 +47,41 @@ def write_output_file(match_results,output_fname=None):
 
 		output_str=''
 		match_metrics=None
+		match_coords=[]
 
 		if matched_points:
 			for coords_decimal in matched_points:
-				x1,y1,x2,y2=map(int,coords_decimal)
-				output_str+='                <point x1="%d" y1="%d" x2="%d" y2="%d"/>\n' % (x1,y1,x2,y2)
+				coords_int=map(int,coords_decimal)
+				match_coords.append(coords_int)
+				output_str+='                <point x1="%d" y1="%d" x2="%d" y2="%d"/>\n' % \
+																					tuple(coords_int)
+
 			match_metrics=(int(match_result['score']),int(match_result['count']),
 											float(match_result['angle_deg']),
 											float(match_result['xd']),float(match_result['yd']))
 
 		matches.append((idx1,idx2,match_result.get('debug_str',''),output_str,match_metrics))
+
+		image_rotation_optimiser.add_image_pair_match(
+									(fname1,fname2),
+									(int(match_result['img1_width']),int(match_result['img1_height'])),
+									(int(match_result['img2_width']),int(match_result['img2_height'])),
+									focal_length_pixels,focal_length_pixels,
+									match_coords)
+
+	image_rotation_optimiser.optimise_panorama()
+
+	output_fd=sys.stdout
+	if output_fname:
+		output_fd=open(output_fname,'wt')
+
+	panorama.write_output_file_header(output_fd)
+
+	for fname,focal_length_35mm,channel_keypoints in images:
+		panorama.write_output_file_image(output_fd,fname,focal_length_35mm,channel_keypoints,
+						image_rotation_optimiser.get_image_kolor_file_angles_rad(fname),focal_length_pixels)
+
+	panorama.write_output_file_midsection(output_fd,len(images))
 
 	panorama.write_output_file_matches(output_fd,matches,len(images))
 	panorama.write_output_file_footer(output_fd)

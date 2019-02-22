@@ -363,6 +363,10 @@ def process_match_and_write_to_dynamodb(processing_batch_key,s3_fname1,s3_fname2
 			'img2_fname': orig_fname2 or s3_fname2,
 			'img1_focal_length_35mm': decimal.Decimal(str(img1.focal_length_35mm)),
 			'img2_focal_length_35mm': decimal.Decimal(str(img2.focal_length_35mm)),
+			'img1_width': decimal.Decimal(str(img1.orig_img_shape[1])),
+			'img1_height': decimal.Decimal(str(img1.orig_img_shape[0])),
+			'img2_width': decimal.Decimal(str(img2.orig_img_shape[1])),
+			'img2_height': decimal.Decimal(str(img2.orig_img_shape[0])),
 			'img1_channel_keypoints': list(img1.channel_keypoints),
 			'img2_channel_keypoints': list(img2.channel_keypoints)
 			}
@@ -494,7 +498,7 @@ def write_output_file_matches(output_fd,matches,nr_of_images):
 	for idx,linked_images in enumerate(link_stats):
 		print >>output_fd,'<!-- #%d links: %s -->' % (idx,' '.join(map(str,linked_images)))
 
-def write_output_file_header(output_fd,images):
+def write_output_file_header(output_fd):
 	print >>output_fd,'''<?xml version="1.0" encoding="UTF-8"?>
 <pano>
     <version filemodel="2.0" application="Autopano Pro 4.4.1" id="9"/>
@@ -510,12 +514,21 @@ def write_output_file_header(output_fd,images):
     <images>
 '''
 
-	for fname,focal_length_35mm,channel_keypoints in images:
-		print >>output_fd,('<image><def filename="%s" focal35mm="%.3f" lensModel="0" ' + \
-										'fisheyeRadius="0" fisheyeCoffX="0" fisheyeCoffY="0"/></image>') % \
-									(fname,focal_length_35mm or 0)
-		print >>output_fd,'<!-- %s %s keypoints -->' % (fname,'+'.join(map(str,channel_keypoints)))
+def write_output_file_image(output_fd,fname,focal_length_35mm,channel_keypoints,
+													kolor_file_angles_rad=None,focal_length_pixels=None):
+	print >>output_fd,'<image>'
 
+	print >>output_fd,('     <def filename="%s" focal35mm="%.3f" lensModel="0" ' + \
+										'fisheyeRadius="0" fisheyeCoffX="0" fisheyeCoffY="0"/>') % \
+									(fname,focal_length_35mm or 0)
+	if kolor_file_angles_rad is not None and focal_length_pixels is not None:
+		print >>output_fd,'     <camera yaw="%.5f" pitch="%.5f" roll="%.5f" f="%.2f"/>' % \
+														(kolor_file_angles_rad + (focal_length_pixels,))
+	print >>output_fd,'</image>'
+
+	print >>output_fd,'<!-- %s %s keypoints -->' % (fname,'+'.join(map(str,channel_keypoints)))
+
+def write_output_file_midsection(output_fd,nr_of_images):
 	print >>output_fd,'''
     </images>
     <layers>
@@ -523,7 +536,7 @@ def write_output_file_header(output_fd,images):
             <images>
 '''
 
-	for idx in range(len(images)):
+	for idx in range(nr_of_images):
 		print >>output_fd,'                <image index="%d" preview="1" output="1"/>' % (idx,)
 
 	print >>output_fd,'''
@@ -533,7 +546,7 @@ def write_output_file_header(output_fd,images):
     <stacks>
 '''
 
-	for idx in range(len(images)):
+	for idx in range(nr_of_images):
 		print >>output_fd,'        <stack>%d</stack>' % (idx,)
 
 	print >>output_fd,'''
