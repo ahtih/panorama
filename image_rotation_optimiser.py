@@ -317,11 +317,8 @@ def add_image_pair_match(image_pair_fnames,image1_size,image2_size,
 
 	add_keypoints(image_pair_fnames,(image1_keypoints,image2_keypoints))
 
-def optimise_panorama(image_fnames_sequence=None):
+def optimise_panorama():
 	global images
-
-	if image_fnames_sequence is None:
-		image_fnames_sequence=sorted(images.keys())
 
 	for image_fname in images.keys():
 		set_keypoints_for_other_images(image_fname)
@@ -417,7 +414,7 @@ if __name__ == '__main__':
 
 			exit(0)
 
-		optimise_panorama(image_fnames_sequence)
+		optimise_panorama()
 
 		for image_fname in image_fnames_sequence:
 			m=images[image_fname][2]
