@@ -117,6 +117,18 @@ def calc_image_pair_fitness(image1_keypoints,other_images_projected_keypoints,im
 	return len(other_images_projected_keypoints) - \
 									numpy.sum(image1_projected_keypoints * other_images_projected_keypoints)
 
+def calc_avg_error_deg():
+	global images
+
+	error_sum=0
+	total_keypoints=0
+	for image_record in images.values():
+		image1_keypoints,other_images_projected_keypoints,image1_matrix,matches=image_record[:4]
+		error_sum+=calc_image_pair_fitness(image1_keypoints,other_images_projected_keypoints,image1_matrix)
+		total_keypoints+=len(matches)
+
+	return acos_degrees(1 - error_sum / float(total_keypoints))
+
 def print_keypoint_errors():
 	global images
 
@@ -400,16 +412,7 @@ if __name__ == '__main__':
 			for image_fname in images.keys():
 				set_keypoints_for_other_images(image_fname)
 
-			error_sum=0
-			total_keypoints=0
-			for image_record in images.values():
-				image1_keypoints,other_images_projected_keypoints,image1_matrix,matches=image_record[:4]
-				error_sum+=calc_image_pair_fitness(image1_keypoints,other_images_projected_keypoints,
-																							image1_matrix)
-				total_keypoints+=len(matches)
-
-			print 'Avg error %.2fdeg' % (acos_degrees(1 - error_sum / float(total_keypoints)),)
-
+			print 'Avg error %.2fdeg' % (calc_avg_error_deg(),)
 			# print_keypoint_errors()
 
 			exit(0)
