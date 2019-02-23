@@ -462,7 +462,9 @@ def calc_triplet_scores(matches):
 
 	return triplet_scores
 
-def write_output_file_matches(output_fd,matches,nr_of_images):
+def filter_matches(matches):
+		# Returns frozenset of trustworthy matches[] indexes
+
 	triplets_input=dict()
 
 	for idx1,idx2,debug_str,output_string,match_metrics in matches:
@@ -473,11 +475,9 @@ def write_output_file_matches(output_fd,matches,nr_of_images):
 
 	triplet_scores=calc_triplet_scores(triplets_input)
 
-	link_stats=[[] for i in range(nr_of_images)]
+	trustworthy_indexes=[]
 
-	for idx1,idx2,debug_str,output_string,match_metrics in matches:
-		print >>output_fd,'        <!-- image %d<-->%d: %s -->' % (idx1,idx2,debug_str)
-
+	for match_idx,(idx1,idx2,debug_str,output_string,match_metrics) in enumerate(matches):
 		if not output_string:
 			continue
 
@@ -488,6 +488,21 @@ def write_output_file_matches(output_fd,matches,nr_of_images):
 		decision_value=calc_classifier_decision_value(
 							(score,count,min(50,abs(angle_deg)),shift_ratio,triplet_score),classifier_params)
 		if decision_value < 0:
+			continue
+
+		trustworthy_indexes.append(match_idx)
+
+	return frozenset(trustworthy_indexes)
+
+def write_output_file_matches(output_fd,matches,nr_of_images):
+	trustworthy_indexes=filter_matches(matches)
+
+	link_stats=[[] for i in range(nr_of_images)]
+
+	for idx,(idx1,idx2,debug_str,output_string,match_metrics) in enumerate(matches):
+		print >>output_fd,'        <!-- image %d<-->%d: %s -->' % (idx1,idx2,debug_str)
+
+		if idx not in trustworthy_indexes:
 			continue
 
 		print >>output_fd,'        <match image1="%d" image2="%d">\n            <points>\n%s            </points>\n        </match>' % \

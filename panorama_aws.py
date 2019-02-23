@@ -33,6 +33,8 @@ def write_output_file(match_results,output_fname=None):
 			image_rotation_optimiser.add_image(fname)
 
 	matches=[]
+	optimiser_matches=[]
+
 	for match_result in match_results:
 		fname1=match_result.get('img1_fname')
 		fname2=match_result.get('img2_fname')
@@ -44,11 +46,10 @@ def write_output_file(match_results,output_fname=None):
 
 		matched_points=match_result.get('matched_points',tuple())
 
-		output_str=''
-		match_metrics=None
-		match_coords=[]
-
 		if matched_points:
+			output_str=''
+			match_coords=[]
+
 			for coords_decimal in matched_points:
 				coords_int=map(int,coords_decimal)
 				match_coords.append(coords_int)
@@ -58,16 +59,21 @@ def write_output_file(match_results,output_fname=None):
 			match_metrics=(int(match_result['score']),int(match_result['count']),
 											float(match_result['angle_deg']),
 											float(match_result['xd']),float(match_result['yd']))
-
-		matches.append((idx1,idx2,match_result.get('debug_str',''),output_str,match_metrics))
-
-		image_rotation_optimiser.add_image_pair_match(
+			optimiser_matches.append((
 									(fname1,fname2),
 									(int(match_result['img1_width']),int(match_result['img1_height'])),
 									(int(match_result['img2_width']),int(match_result['img2_height'])),
 									images[idx1][3],	# focal_length_pixels
 									images[idx2][3],	# focal_length_pixels
-									match_coords)
+									match_coords))
+
+			matches.append((idx1,idx2,match_result.get('debug_str',''),output_str,match_metrics))
+		else:
+			optimiser_matches.append(None)
+			matches.append((idx1,idx2,match_result.get('debug_str',''),'',None))
+
+	for idx in panorama.filter_matches(matches):
+		image_rotation_optimiser.add_image_pair_match(*optimiser_matches[idx])
 
 	image_rotation_optimiser.optimise_panorama()
 
