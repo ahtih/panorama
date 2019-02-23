@@ -363,6 +363,8 @@ def process_match_and_write_to_dynamodb(processing_batch_key,s3_fname1,s3_fname2
 			'img2_fname': orig_fname2 or s3_fname2,
 			'img1_focal_length_35mm': decimal.Decimal(str(img1.focal_length_35mm)),
 			'img2_focal_length_35mm': decimal.Decimal(str(img2.focal_length_35mm)),
+			'img1_focal_length_pixels': decimal.Decimal(str(img1.focal_length_orig_pixels)),
+			'img2_focal_length_pixels': decimal.Decimal(str(img2.focal_length_orig_pixels)),
 			'img1_width': decimal.Decimal(str(img1.orig_img_shape[1])),
 			'img1_height': decimal.Decimal(str(img1.orig_img_shape[0])),
 			'img2_width': decimal.Decimal(str(img2.orig_img_shape[1])),

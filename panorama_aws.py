@@ -15,7 +15,7 @@ def get_match_results(processing_batch_key):
 	return query_result.get('Items',tuple())
 
 def write_output_file(match_results,output_fname=None):
-	images=[]		# (fname,focal_length_35mm,channel_keypoints)
+	images=[]		# (fname,focal_length_35mm,channel_keypoints,focal_length_pixels)
 	fname_to_idx={}
 
 	image_rotation_optimiser.clear_images()
@@ -27,11 +27,10 @@ def write_output_file(match_results,output_fname=None):
 				continue
 			fname_to_idx[fname]=len(images)
 			images.append((fname,float(match_result[key_prefix + 'focal_length_35mm']),
-												map(int,match_result[key_prefix + 'channel_keypoints'])))
+								map(int,match_result[key_prefix + 'channel_keypoints']),
+								float(match_result[key_prefix + 'focal_length_pixels'])))
 
 			image_rotation_optimiser.add_image(fname)
-
-	focal_length_pixels=2844.49				#!!!!
 
 	matches=[]
 	for match_result in match_results:
@@ -66,7 +65,8 @@ def write_output_file(match_results,output_fname=None):
 									(fname1,fname2),
 									(int(match_result['img1_width']),int(match_result['img1_height'])),
 									(int(match_result['img2_width']),int(match_result['img2_height'])),
-									focal_length_pixels,focal_length_pixels,
+									images[idx1][3],	# focal_length_pixels
+									images[idx2][3],	# focal_length_pixels
 									match_coords)
 
 	image_rotation_optimiser.optimise_panorama()
@@ -77,7 +77,7 @@ def write_output_file(match_results,output_fname=None):
 
 	panorama.write_output_file_header(output_fd)
 
-	for fname,focal_length_35mm,channel_keypoints in images:
+	for fname,focal_length_35mm,channel_keypoints,focal_length_pixels in images:
 		panorama.write_output_file_image(output_fd,fname,focal_length_35mm,channel_keypoints,
 						image_rotation_optimiser.get_image_kolor_file_angles_rad(fname),focal_length_pixels)
 
