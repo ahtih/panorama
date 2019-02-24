@@ -14,7 +14,7 @@ def get_match_results(processing_batch_key):
 
 	return query_result.get('Items',tuple())
 
-def write_output_file(match_results,output_fname=None):
+def write_output_file(match_results,output_fname=None,print_verbose=False):
 	images=[]		# (fname,focal_length_35mm,channel_keypoints,focal_length_pixels)
 	fname_to_idx={}
 
@@ -75,7 +75,7 @@ def write_output_file(match_results,output_fname=None):
 	for idx in panorama.filter_matches(matches):
 		image_rotation_optimiser.add_image_pair_match(*optimiser_matches[idx])
 
-	image_rotation_optimiser.optimise_panorama()
+	image_rotation_optimiser.optimise_panorama(print_verbose)
 
 	output_fd=sys.stdout
 	if output_fname:
@@ -115,9 +115,10 @@ if '--output-batch' in keyword_args:
 	match_results=get_match_results(processing_batch_key)
 	print 'Got %d pairwise image match results' % (len(match_results),)
 
-	write_output_file(match_results,keyword_args.get('--output-fname'))
+	write_output_file(match_results,keyword_args.get('--output-fname'),True)
 else:
 	image_fnames=positional_args[1:]
+	print_verbose=('--verbose' in keyword_args)
 
 	processing_batch_key='%016x' % (random.randint(0,2**64-1),)
 	print 'Creating processing batch %s with %u images' % (processing_batch_key,len(image_fnames))
@@ -125,7 +126,8 @@ else:
 	s3_fnames=[]
 
 	for idx,fname in enumerate(image_fnames):
-		print 'Processing',fname
+		if print_verbose:
+			print 'Processing',fname
 		img=panorama.ImageKeypoints(fname,True)
 		# print '   ','+'.join(map(str,img.channel_keypoints))
 
@@ -133,7 +135,8 @@ else:
 		img.save_to_s3(s3_fname)
 		s3_fnames.append(s3_fname)
 
-	print 'Spawning match_images Lambda tasks'
+	if print_verbose:
+		print 'Spawning match_images Lambda tasks'
 
 	lambda_client=panorama.aws_session.client('lambda')
 
@@ -156,7 +159,8 @@ else:
 	while True:
 		match_results=get_match_results(processing_batch_key)
 		if len(match_results) != prev_printed_status:
-			print 'Completed %d of %d pairwise matches' % (len(match_results),expected_nr_of_match_results)
+			if print_verbose:
+				print 'Completed %d of %d pairwise matches' % (len(match_results),expected_nr_of_match_results)
 			prev_printed_status=len(match_results)
 			prev_update_time=time.time()
 		if len(match_results) >= expected_nr_of_match_results:
@@ -182,4 +186,4 @@ else:
 		print '%d pairwise matches produced errors, first error is here:' % (error_count,)
 		print first_error_text
 
-	write_output_file(match_results,keyword_args.get('--output-fname'))
+	write_output_file(match_results,keyword_args.get('--output-fname'),print_verbose)

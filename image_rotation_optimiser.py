@@ -317,7 +317,7 @@ def add_image_pair_match(image_pair_fnames,image1_size,image2_size,
 
 	add_keypoints(image_pair_fnames,(image1_keypoints,image2_keypoints))
 
-def optimise_panorama():
+def optimise_panorama(print_verbose=False):
 	global images
 
 	for image_fname in images.keys():
@@ -332,7 +332,9 @@ def optimise_panorama():
 			iterations,rot_rad=optimise_image_rot(image_fname,math.radians(30))
 			round_iterations+=iterations
 			round_rot_rad+=rot_rad
-		print 'Round %u: %u iterations, %.1fdeg rotation' % (i,round_iterations,math.degrees(round_rot_rad))
+		if print_verbose:
+			print 'Round %u: %u iterations, %.1fdeg rotation' % \
+														(i,round_iterations,math.degrees(round_rot_rad))
 		if round_rot_rad == 0:
 			break
 
@@ -414,7 +416,7 @@ if __name__ == '__main__':
 
 			exit(0)
 
-		optimise_panorama()
+		optimise_panorama(True)
 
 		for image_fname in image_fnames_sequence:
 			m=images[image_fname][2]
