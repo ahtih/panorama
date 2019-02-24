@@ -519,7 +519,7 @@ def write_output_file_header(output_fd):
 	print >>output_fd,'''<?xml version="1.0" encoding="UTF-8"?>
 <pano>
     <version filemodel="2.0" application="Autopano Pro 4.4.1" id="9"/>
-    <finalRender basename="%a" path="%p" fileType="jpg" fileCompression="5" fileDepth="8" interpolationMode="3" blendMode="2" outputPercent="100" overwrite="1" fileEmbedAll="0" removeAlpha="0" outputPanorama="1" outputLayers="0" outputPictures="0" multibandLevel="-2" alphaDiamond="0" exposureWeights="0" cutting="1" graphcutGhostFocal="0" bracketedGhost="0"/>
+    <finalRender basename="%a" path="%p" fileType="jpg" fileCompression="8" nCols="15872" nRows="7936" fileDepth="8" interpolationMode="3" blendMode="2" outputPercent="100" overwrite="1" fileEmbedAll="0" removeAlpha="0" outputPanorama="1" outputLayers="0" outputPictures="0" multibandLevel="-2" alphaDiamond="0" exposureWeights="0" cutting="1" graphcutGhostFocal="0" bracketedGhost="0"/>
     <optim>
         <options automaticSteps="0" automaticSettings="0" focalHandling="-1" distoHandling="-1" offsetsHandling="-1" multipleVPHandling="0" yprScope="0" focalScope="2" distoScope="2" offsetScope="2" hScope="0" optLG="1" useGO="1" matrixLG="0" gridLG="0" optFinal1="1" optLens1="1" optLens2="1" stepGeomAnalysis="1" cleanPoints="0" cleanLinks="0" cbpMode="0" cbpThreshold="5" cbpLimit="50" cbpLinkThreshold="40" matLGMode="1" matLGRow="1" matLGStack="1" matLG360="0" matLGOverlapping="25" gaMode="0" calibratedRig="0"/>
     </optim>
