@@ -125,7 +125,7 @@ def calc_avg_error_deg():
 	for image_record in images.values():
 		image1_keypoints,other_images_projected_keypoints,image1_matrix,matches=image_record[:4]
 		error_sum+=calc_image_pair_fitness(image1_keypoints,other_images_projected_keypoints,image1_matrix)
-		total_keypoints+=len(matches)
+		total_keypoints+=image1_keypoints.shape[1]
 
 	return acos_degrees(1 - error_sum / float(total_keypoints))
 
@@ -341,7 +341,7 @@ def optimise_panorama(print_verbose=False):
 		total_iterations+=round_iterations
 
 	avg_error=sum(map(operator.itemgetter(4),images.values())) / \
-											sum([len(image_record[3]) for image_record in images.values()])
+									sum([image_record[0].shape[1] for image_record in images.values()])
 	print '%u total iterations, avg error %.2fdeg' % (total_iterations,acos_degrees(1-avg_error))
 
 def get_image_kolor_file_angles_rad(fname):
