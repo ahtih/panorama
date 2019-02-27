@@ -245,24 +245,27 @@ def optimise_image_rot(image_fname,max_rotation_rad=None):
 												other_images_projected_keypoints,epsilon_rotation_matrices)
 		iterations+=_iterations
 
-		gradient_direction=normalise(numpy.array(gradient_direction))
+		best_m=None
 
-		_iterations,best_m,best_error,best_rot_rad,best_rot_amount=try_optimise_direction(
+		if best_direction_axis is not None:
+			gradient_direction=normalise(numpy.array(gradient_direction))
+
+			_iterations,best_m,best_error,best_rot_rad,best_rot_amount=try_optimise_direction(
 							euler_angles_to_matrix(gradient_direction * epsilon_angle_rad),
 							cur_error,image1_keypoints,
 							other_images_projected_keypoints,image1_matrix,
 							max_rotation_rad-cumulative_rot_rad if max_rotation_rad is not None else None)
-		iterations+=_iterations
+			iterations+=_iterations
 
-		if best_m is None and best_direction_axis is not None:
-			# print '   ',gradient_direction
+			if best_m is None:
+				# print '   ',gradient_direction
 
-			_iterations,best_m,best_error,best_rot_rad,best_rot_amount=try_optimise_direction(
+				_iterations,best_m,best_error,best_rot_rad,best_rot_amount=try_optimise_direction(
 							epsilon_rotation_matrices[best_direction_axis],
 							cur_error,image1_keypoints,
 							other_images_projected_keypoints,image1_matrix,
 							max_rotation_rad-cumulative_rot_rad if max_rotation_rad is not None else None)
-			iterations+=_iterations
+				iterations+=_iterations
 
 		if best_m is None:
 			_iterations,gradient_direction,best_direction_axis=calc_optimisation_gradient(
