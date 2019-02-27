@@ -3,7 +3,7 @@
 
 import sys,os,operator,math,numpy,kolor_xml_file,cv2
 
-images=dict()	# [fname]=[image1_keypoints,other_images_projected_keypoints,image_matrix,matches,cur_error]
+images=dict()	# [fname]=[image1_keypoints,other_images_projected_keypoints,image_matrix,matches,cur_error,diagonal_fov_deg]
 				#							matches=((image2_fname,nr_of_points,image2_start_point_idx),...)
 
 euler_angle_unit_matrices=(	numpy.array([
@@ -104,6 +104,11 @@ def keypoint_pixels_to_vec3(x,y,focal_length_pixels,image_size):
 
 	v=numpy.array([focal_length_pixels,image_size[0]/2.0 - x,image_size[1]/2.0 - y],'f')
 	return normalise(v)
+
+def camera_forward_vec3(image_fname):
+	global images
+
+	return numpy.asarray(images[image_fname][2])[:,0]
 
 def calc_image_pair_fitness(image1_keypoints,other_images_projected_keypoints,image1_matrix):
 	# This takes ca 10us for 30 keypoint pairs
@@ -301,7 +306,12 @@ def add_image(fname,initial_quaternion=None):
 					numpy.zeros((0,3)),
 					numpy.matrix(numpy.identity(3)) if initial_quaternion is None else q.to_matrix(),
 					[],
+					None,
 					None]
+
+def calc_diagonal_fov_deg(image_size,focal_length_pixels):
+	diagonal_pixels=math.sqrt(image_size[0]**2 + image_size[1]**2)
+	return math.degrees(2 * math.atan2(diagonal_pixels / 2,focal_length_pixels))
 
 def add_image_pair_match(image_pair_fnames,image1_size,image2_size,
 										image1_focal_length_pixels,image2_focal_length_pixels,matches):
@@ -316,6 +326,9 @@ def add_image_pair_match(image_pair_fnames,image1_size,image2_size,
 		image2_keypoints.append(keypoint_pixels_to_vec3(x2,y2,image2_focal_length_pixels,image2_size))
 
 	add_keypoints(image_pair_fnames,(image1_keypoints,image2_keypoints))
+
+	images[image_pair_fnames[0]][5]=calc_diagonal_fov_deg(image1_size,image1_focal_length_pixels)
+	images[image_pair_fnames[1]][5]=calc_diagonal_fov_deg(image2_size,image2_focal_length_pixels)
 
 def optimise_panorama(print_verbose=False):
 	global images
@@ -333,7 +346,7 @@ def optimise_panorama(print_verbose=False):
 			round_iterations+=iterations
 			round_rot_rad+=rot_rad
 		if print_verbose:
-			print 'Round %u: %u iterations, %.1fdeg rotation' % \
+			print '   Round %u: %u iterations, %.1fdeg rotation' % \
 														(i,round_iterations,math.degrees(round_rot_rad))
 		if round_rot_rad == 0:
 			break
@@ -349,6 +362,101 @@ def get_image_kolor_file_angles_rad(fname):
 
 	m=images[fname][2]
 	return matrix_to_kolor_file_angles(m)
+
+def matched_image_fnames(image1_fname):
+	global images
+
+	return map(operator.itemgetter(0),images[image1_fname][3])
+
+def remove_insignificant_matches():
+	global images
+
+	image_forward_vectors=dict()
+
+	for image_fname in images.keys():
+		image_forward_vectors[image_fname]=camera_forward_vec3(image_fname)
+
+	match_angle_deg=dict()
+	match_nr_of_points=dict()
+
+	for image1_fname,image1_record in images.items():
+		for image2_fname,nr_of_points,image2_start_point_idx in image1_record[3]:
+			angle_deg=acos_degrees(image_forward_vectors[image1_fname].dot(
+																	image_forward_vectors[image2_fname]))
+			match_angle_deg[image1_fname,image2_fname]=angle_deg
+			match_nr_of_points[image1_fname,image2_fname]=nr_of_points
+
+	matches_to_remove=set()
+
+	for (image1_fname,image2_fname),angle_deg in match_angle_deg.items():
+		if image1_fname < image2_fname:
+			continue
+		diagonal_fov_deg=min(images[image1_fname][5],images[image2_fname][5])
+
+		if angle_deg < 0.45 * diagonal_fov_deg:
+			continue
+
+		for image3_fname in frozenset(matched_image_fnames(image1_fname)).intersection(
+																		matched_image_fnames(image2_fname)):
+			image3_record=images[image3_fname]
+			diagonal_fov_deg3=min(diagonal_fov_deg,image3_record[5])
+			angle_deg3=max(	match_angle_deg[image1_fname,image3_fname],
+							match_angle_deg[image2_fname,image3_fname])
+			if angle_deg3 > 0.6 * angle_deg:
+				continue
+			if min(	match_nr_of_points[image1_fname,image3_fname],
+					match_nr_of_points[image2_fname,image3_fname]) < 7:
+				continue
+
+			image3_error_deg=acos_degrees(1 - image3_record[4] / float(len(image3_record[1])))
+			if image3_error_deg > 6:
+				continue
+
+			# print angle_deg3/angle_deg,image1_fname,image2_fname,angle_deg,angle_deg3,match_nr_of_points[image1_fname,image2_fname]
+
+			matches_to_remove.add((image1_fname,image2_fname))
+			matches_to_remove.add((image2_fname,image1_fname))
+			break
+
+	for image1_fname,delete_image2_fname in matches_to_remove:
+		img_record=images[image1_fname]
+		matches=img_record[3]
+
+		kp_idx=0
+		nr_of_kps=0
+
+		for idx in range(len(matches)):
+			nr_of_kps=matches[idx][1]
+			if matches[idx][0] != delete_image2_fname:
+				kp_idx+=nr_of_kps
+				continue
+			del matches[idx]
+
+			img_record[0]=numpy.delete(img_record[0],numpy.s_[kp_idx:(kp_idx+nr_of_kps)],axis=1)
+			img_record[1]=numpy.delete(img_record[1],numpy.s_[kp_idx:(kp_idx+nr_of_kps)],axis=0)
+
+			break
+
+		for img_record in images.values():
+			for idx,match_record in enumerate(img_record[3]):
+				if match_record[0] == image1_fname and match_record[2] > kp_idx:
+					match_record=list(match_record)
+					match_record[2]-=nr_of_kps
+					img_record[3][idx]=tuple(match_record)
+
+	return matches_to_remove
+
+def optimise_panorama_and_remove_insignificant_matches(print_verbose=False):
+	optimise_panorama(print_verbose)
+
+	matches_to_remove=remove_insignificant_matches()
+
+	if matches_to_remove:
+		if print_verbose:
+			print 'Removing %d insignificant matches' % (len(matches_to_remove)/2,)
+		optimise_panorama(print_verbose)
+
+	return matches_to_remove
 
 if __name__ == '__main__':
 	keyword_args={}
@@ -401,7 +509,7 @@ if __name__ == '__main__':
 			#	if image_pair_idx != tuple(positional_args[1:]):
 			#		continue
 
-			focal_length_pixels=2844.49				#!!!!
+			focal_length_pixels=2598.69				#!!!!
 			add_image_pair_match(image_pair_idx,
 									image_sizes[image_pair_idx[0]],image_sizes[image_pair_idx[1]],
 									focal_length_pixels,focal_length_pixels,
@@ -416,7 +524,7 @@ if __name__ == '__main__':
 
 			exit(0)
 
-		optimise_panorama(True)
+		optimise_panorama_and_remove_insignificant_matches(True)
 
 		for image_fname in image_fnames_sequence:
 			m=images[image_fname][2]

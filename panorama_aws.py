@@ -67,15 +67,22 @@ def write_output_file(match_results,output_fname=None,print_verbose=False):
 									images[idx2][3],	# focal_length_pixels
 									match_coords))
 
-			matches.append((idx1,idx2,match_result.get('debug_str',''),output_str,match_metrics))
+			matches.append([idx1,idx2,match_result.get('debug_str',''),output_str,match_metrics])
 		else:
 			optimiser_matches.append(None)
-			matches.append((idx1,idx2,match_result.get('debug_str',''),'',None))
+			matches.append([idx1,idx2,match_result.get('debug_str',''),'',None])
 
 	for idx in panorama.filter_matches(matches):
 		image_rotation_optimiser.add_image_pair_match(*optimiser_matches[idx])
 
-	image_rotation_optimiser.optimise_panorama(print_verbose)
+	matches_to_remove=image_rotation_optimiser.optimise_panorama_and_remove_insignificant_matches(
+																							print_verbose)
+	for image1_fname,image2_fname in matches_to_remove:
+		idx_pair=(fname_to_idx[image1_fname],fname_to_idx[image2_fname])
+
+		for match_record in matches:
+			if tuple(match_record[:2]) == idx_pair:
+				match_record[3]=''
 
 	output_fd=sys.stdout
 	if output_fname:
