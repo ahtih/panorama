@@ -2,6 +2,7 @@
 # -*- coding: latin-1
 
 import sys,os,operator,math,numpy,kolor_xml_file,exif
+from quaternion import Quaternion
 from PIL import Image
 
 images=dict()	# [fname]=[image1_keypoints,other_images_projected_keypoints,image_matrix,matches,cur_error,diagonal_fov_deg]
@@ -110,6 +111,11 @@ def camera_forward_vec3(image_fname):
 	global images
 
 	return numpy.asarray(images[image_fname][2])[:,0]
+
+def camera_up_vec3(image_fname):
+	global images
+
+	return numpy.asarray(images[image_fname][2])[:,2]
 
 def calc_image_pair_fitness(image1_keypoints,other_images_projected_keypoints,image1_matrix):
 	# This takes ca 10us for 30 keypoint pairs
@@ -460,7 +466,82 @@ def optimise_panorama_and_remove_insignificant_matches(print_verbose=False):
 			print 'Removing %d insignificant matches' % (len(matches_to_remove)/2,)
 		optimise_panorama(print_verbose)
 
+	normalise_up_direction()
+
 	return matches_to_remove
+
+def optimise_up_direction(camera_up_vectors,starting_up_direction_vec3):
+	# Returns (optimised_up_direction_vec3,fitness_score)
+
+	best_score=0
+	best_up_direction=list(starting_up_direction_vec3)
+
+	while True:
+		improvement_found_delta_amount=None
+
+		delta_amount=0.2
+		while delta_amount >= 0.0001 and improvement_found_delta_amount is None:
+			for axis in range(3):
+				for dir in (-1,+1):
+
+					v=list(best_up_direction)
+					v[axis]+=dir * delta_amount
+
+					up_direction=normalise(numpy.array(v,'f')).T
+
+					# dot_products_forward=camera_forward_vectors.dot(up_direction)
+					# score=sum([(max(0,0.5 - abs(d))/0.5)**2 for d in dot_products_forward]) / float(len(images))
+
+					dot_products_up=camera_up_vectors.dot(up_direction)
+					score=sum([(max(0,d - 0.7)/0.3)**2 for d in dot_products_up]) / float(len(images))
+
+					# for image_fname,d in zip(image_fnames,dot_products_up):
+					#	print '   ',image_fname,d,max(0,d - 0.7)**2
+					# print score,score_up
+					# exit(0)
+
+					if best_score < score:
+						best_score=score
+						best_up_direction=tuple(up_direction)
+						improvement_found_delta_amount=delta_amount
+
+			delta_amount*=0.5
+
+		# print best_score,best_up_direction,improvement_found_delta_amount
+
+		if improvement_found_delta_amount is None:
+			break
+
+	return (best_up_direction,best_score)
+
+def find_up_direction_vec3():
+	global images
+
+	image_fnames=list(images.keys())
+	# camera_forward_vectors=numpy.stack(map(camera_forward_vec3,image_fnames))
+	camera_up_vectors     =numpy.stack(map(camera_up_vec3     ,image_fnames))
+
+	best_score=0
+	best_up_direction=[0,0,1]
+
+	for img_fname in images:
+		up_direction,score=optimise_up_direction(camera_up_vectors,camera_up_vec3(img_fname))
+		if best_score <= score:
+			best_score=score
+			best_up_direction=up_direction
+
+	return best_up_direction
+
+def normalise_up_direction():
+	global images
+
+	cur_up_direction=find_up_direction_vec3()
+	q=Quaternion.from_two_unit_vectors(cur_up_direction,(0,0,1))
+	rotation_matrix=q.to_matrix().T
+
+	for img_fname in images.keys():
+		images[img_fname][2]=rotation_matrix * images[img_fname][2]
+		set_keypoints_for_other_images(img_fname)
 
 if __name__ == '__main__':
 	keyword_args={}

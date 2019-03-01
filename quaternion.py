@@ -1,5 +1,14 @@
 import math,numpy
 
+def cross_product_vec3(a,b):
+	return (a[1]*b[2] - a[2]*b[1],a[2]*b[0] - a[0]*b[2],a[0]*b[1] - a[1]*b[0])
+
+def dot_product_vec3(a,b):
+	return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+
+def vec3_len(v):
+	return math.sqrt(v[0]**2 + v[1]**2 + v[2]**2)
+
 class Quaternion(list):
 	def __init__(self,w,q1,q2,q3):
 		self[:]=(w,q1,q2,q3)
@@ -18,14 +27,32 @@ class Quaternion(list):
 			# Rotation is clockwise when viewed from positive side of its axis
 		return Quaternion.from_single_axis_angle(axis_idx,math.radians(angle_deg))
 
+	@staticmethod
+	def from_two_unit_vectors(a,b):
+		# Returns quaternion for rotation from a to b
+
+		axis=cross_product_vec3(a,b)
+		angle_sin=vec3_len(axis)
+
+		if angle_sin < 1e-20:
+			return Quaternion(1,0,0,0)
+
+		return Quaternion(1 + dot_product_vec3(a,b),*axis).normalised()
+
 	def __mul__(self,r):
 			# q1 * q2 rotates q2 by q1 in extrinsic (world) frame, which is
 			#	the same as rotating q1 by q2 in intrinsic (q1) frame
 
-			return Quaternion(	r[0]*self[0] - r[1]*self[1] - r[2]*self[2] - r[3]*self[3],
-								r[0]*self[1] + r[1]*self[0] - r[2]*self[3] + r[3]*self[2],
-								r[0]*self[2] + r[2]*self[0] - r[3]*self[1] + r[1]*self[3],
-								r[0]*self[3] + r[3]*self[0] - r[1]*self[2] + r[2]*self[1])
+		return Quaternion(	r[0]*self[0] - r[1]*self[1] - r[2]*self[2] - r[3]*self[3],
+							r[0]*self[1] + r[1]*self[0] - r[2]*self[3] + r[3]*self[2],
+							r[0]*self[2] + r[2]*self[0] - r[3]*self[1] + r[1]*self[3],
+							r[0]*self[3] + r[3]*self[0] - r[1]*self[2] + r[2]*self[1])
+
+	def normalised(self):
+		l=math.sqrt(self[0]**2 + self[1]**2 + self[2]**2 + self[3]**2)
+		if l < 1e-20:
+			return self
+		return Quaternion(self[0] / l,self[1] / l,self[2] / l,self[3] / l)
 
 	def conjugate(self):
 		return Quaternion(self[0],-self[1],-self[2],-self[3])
@@ -55,6 +82,12 @@ class Quaternion(list):
 
 	def total_rotation_angle_deg(self):
 		return math.degrees(self.total_rotation_angle())
+
+	def z_basis_vector(self):
+		x=2*(self[1]*self[3] + self[0]*self[2])
+		y=2*(self[2]*self[3] - self[0]*self[1])
+		z=1 - 2*(self[1]*self[1] + self[2]*self[2])
+		return (x,y,z)
 
 	def to_matrix(self):
 		# Returns a post-multiplication active rotation matrix
