@@ -1,7 +1,8 @@
 #!/usr/bin/python
 # -*- coding: latin-1
 
-import sys,os,operator,math,numpy,kolor_xml_file,cv2
+import sys,os,operator,math,numpy,kolor_xml_file,exif
+from PIL import Image
 
 images=dict()	# [fname]=[image1_keypoints,other_images_projected_keypoints,image_matrix,matches,cur_error,diagonal_fov_deg]
 				#							matches=((image2_fname,nr_of_points,image2_start_point_idx),...)
@@ -500,7 +501,10 @@ if __name__ == '__main__':
 			for image_fname in image_pair_idx:
 				if image_fname not in image_sizes:
 					if os.access(image_fname,os.R_OK):
-						image_sizes[image_fname]=tuple(reversed(cv2.imread(image_fname).shape[:2]))
+						raw_size=Image.open(image_fname).size
+						rotation_deg=exif.exif_image_rotation_clockwise_deg(exif.read_exif(image_fname))
+						image_sizes[image_fname]=tuple(reversed(raw_size)) \
+														if rotation_deg in (90,-90,270,-270) else raw_size
 
 		clear_images()
 

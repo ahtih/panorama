@@ -38,3 +38,18 @@ def exif_sensor_size_mm(tags):
 		sensor_y_mm=resolution_unit_mm * y_size / y_res
 
 	return (sensor_x_mm,sensor_y_mm)
+
+def exif_image_rotation_clockwise_deg(tags):
+	# Returns None if orientation is not set
+
+	tag=tags.get('Image Orientation')
+	if tag is None:
+		return None
+	if not tag.values:
+		return None
+
+	orientation_decode={1: 0,
+						8: -90,
+						3: 180,
+						6: 90}
+	return orientation_decode.get(tag.values[0])
