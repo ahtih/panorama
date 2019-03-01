@@ -26,7 +26,7 @@ def read_kolor_xml_file(fname,reset_globals=False,set_alternative_fnames=False):
 			if set_alternative_fnames:
 				fname_lists.append(map(os.path.basename,img_fnames))
 
-			return tuple([tuple(sorted(fnames)) for fnames in fname_lists])
+			return tuple([(tuple(sorted(fnames)),fnames[0] > fnames[1]) for fnames in fname_lists])
 
 		def startElement(self,name,attrs):
 			global matches
@@ -36,7 +36,7 @@ def read_kolor_xml_file(fname,reset_globals=False,set_alternative_fnames=False):
 			elif name == 'def':
 				self.cur_image_fname=attrs.get('filename')
 				for fname2 in self.image_fnames:
-					for idx in self.calc_filename_indexes((self.cur_image_fname,fname2)):
+					for idx,is_order_reversed in self.calc_filename_indexes((self.cur_image_fname,fname2)):
 						matches[idx]=False
 				self.image_fnames.append(self.cur_image_fname)
 			elif name == 'camera':
@@ -62,8 +62,9 @@ def read_kolor_xml_file(fname,reset_globals=False,set_alternative_fnames=False):
 					self.cur_image_quaternion=None
 					self.cur_image_fname=None
 			elif name == 'match':
-				for idx in self.match_indexes:
-					matches[idx]=tuple(self.cur_match_points)
+				reversed_match_points=[(x2,y2,x1,y1) for x1,y1,x2,y2 in self.cur_match_points]
+				for idx,is_order_reversed in self.match_indexes:
+					matches[idx]=tuple(reversed_match_points if is_order_reversed else self.cur_match_points)
 
 	handler=kolor_xml_handler()
 
