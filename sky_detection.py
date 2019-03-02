@@ -60,6 +60,8 @@ if __name__ == '__main__':
 
 		skyness_lookup_table=numpy.zeros((HISTOGRAM_DIMENSION_SIZE,) * 3,numpy.uint8)
 
+		count_threshold=numpy.sum(total_histogram) / 1000
+
 		# print total_histogram
 
 		bin_counts=[]
@@ -73,7 +75,7 @@ if __name__ == '__main__':
 							min_idx=max(0,idx - box_size_length/2)
 							slice_index.append(slice(min_idx,min_idx+box_size_length))
 						counts_sum=numpy.sum(total_histogram[tuple(slice_index)])
-						if counts_sum >= 1000:
+						if counts_sum >= count_threshold:
 							sky_counts_sum=numpy.sum(class_histograms[1][tuple(slice_index)])
 							additional_sky_count=sky_counts_sum * counts_scaling_coeff
 							skyness=int((sky_counts_sum + additional_sky_count) * 255 / \
@@ -94,6 +96,10 @@ if __name__ == '__main__':
 
 		init(skyness_fname)
 		cv2.imwrite(output_fname,calc_image_skyness(cv2.imread(input_fname)))
+
+		# im=cv2.imread(input_fname)
+		# dest_im=numpy.uint8(numpy.absolute(cv2.Laplacian(im,cv2.CV_16S)) * 30)
+		# cv2.imwrite(output_fname,dest_im)
 
 	elif operation_mode == 'score':
 		skyness_fname=sys.argv[2]

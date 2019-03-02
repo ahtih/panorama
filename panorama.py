@@ -64,7 +64,7 @@ class ImageKeypoints:
 			self.img=cv2.resize(self.img,(0,0),fx=1.0 / RESIZE_FACTOR,fy=1.0 / RESIZE_FACTOR)
 
 		self.sky_mask=cv2.threshold(sky_detection.calc_image_skyness(self.img),
-																		128,255,cv2.THRESH_BINARY_INV)[1]
+																		64,255,cv2.THRESH_BINARY_INV)[1]
 
 		tags=exif.read_exif(fname)
 		focal_length_mm=exif.exif_focal_length(tags)
