@@ -41,6 +41,8 @@ if __name__ == '__main__':
 		class_histograms=[None,None]
 
 		for is_sky,dirname in ((False,nonsky_images_directory),(True,sky_images_directory)):
+			print 'Reading training images in',dirname
+
 			for fname in os.listdir(dirname):
 				if not fname.lower().endswith('.jpg') and not fname.lower().endswith('.jpeg'):
 					continue
@@ -95,6 +97,7 @@ if __name__ == '__main__':
 
 	elif operation_mode == 'score':
 		skyness_fname=sys.argv[2]
+		init(skyness_fname)
 
 		for input_fname in sys.argv[3:]:
 			im=calc_image_skyness(cv2.imread(input_fname))
