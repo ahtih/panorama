@@ -72,17 +72,15 @@ def write_output_file(match_results,output_fname=None,print_verbose=False):
 			optimiser_matches.append(None)
 			matches.append([idx1,idx2,match_result.get('debug_str',''),'',None])
 
-	for idx in panorama.filter_matches(matches):
+	trustworthy_indexes=set(panorama.filter_matches(matches))
+	for idx in trustworthy_indexes:
 		image_rotation_optimiser.add_image_pair_match(*optimiser_matches[idx])
 
 	matches_to_remove=image_rotation_optimiser.optimise_panorama_and_remove_insignificant_matches(
 																							print_verbose)
-	for image1_fname,image2_fname in matches_to_remove:
-		idx_pair=(fname_to_idx[image1_fname],fname_to_idx[image2_fname])
-
-		for match_record in matches:
-			if tuple(match_record[:2]) == idx_pair:
-				match_record[3]=''
+	for idx,(idx1,idx2,debug_str,output_string,match_metrics) in enumerate(matches):
+		if (images[idx1][0],images[idx2][0]) in matches_to_remove:
+			trustworthy_indexes.discard(idx)
 
 	output_fd=sys.stdout
 	if output_fname:
@@ -96,7 +94,7 @@ def write_output_file(match_results,output_fname=None,print_verbose=False):
 
 	panorama.write_output_file_midsection(output_fd,len(images))
 
-	panorama.write_output_file_matches(output_fd,matches,len(images))
+	panorama.write_output_file_matches(output_fd,matches,trustworthy_indexes,len(images))
 	panorama.write_output_file_footer(output_fd)
 
 keyword_args={}

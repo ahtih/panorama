@@ -494,15 +494,13 @@ def filter_matches(matches):
 
 	return frozenset(trustworthy_indexes)
 
-def write_output_file_matches(output_fd,matches,nr_of_images):
-	trustworthy_indexes=filter_matches(matches)
-
+def write_output_file_matches(output_fd,matches,indexes_to_output,nr_of_images):
 	link_stats=[[] for i in range(nr_of_images)]
 
 	for idx,(idx1,idx2,debug_str,output_string,match_metrics) in enumerate(matches):
 		print >>output_fd,'        <!-- image %d<-->%d: %s -->' % (idx1,idx2,debug_str)
 
-		if idx not in trustworthy_indexes:
+		if idx not in indexes_to_output:
 			continue
 
 		print >>output_fd,'        <match image1="%d" image2="%d">\n            <points>\n%s            </points>\n        </match>' % \

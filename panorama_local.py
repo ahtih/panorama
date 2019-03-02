@@ -40,7 +40,9 @@ def print_matches_for_images(output_fd):
 	else:
 		results=itertools.imap(worker_func,worker_args)
 
-	panorama.write_output_file_matches(output_fd,list(results),len(images_with_keypoints))
+	matches=list(results)
+	panorama.write_output_file_matches(output_fd,matches,panorama.filter_matches(matches),
+																				len(images_with_keypoints))
 
 def read_lowlevel_matches_from_file(fname):
 	image_fnames=[]
