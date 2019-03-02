@@ -30,7 +30,7 @@ if __name__ == '__main__':
 
 	operation_mode=sys.argv[1]
 
-	if operation_mode not in ('train','detect'):
+	if operation_mode not in ('train','detect','score'):
 		print 'Invalid operation_mode',operation_mode
 		exit(0)
 
@@ -92,3 +92,11 @@ if __name__ == '__main__':
 
 		init(skyness_fname)
 		cv2.imwrite(output_fname,calc_image_skyness(cv2.imread(input_fname)))
+
+	elif operation_mode == 'score':
+		skyness_fname=sys.argv[2]
+
+		for input_fname in sys.argv[3:]:
+			im=calc_image_skyness(cv2.imread(input_fname))
+			score=numpy.sum(im) * 999 / (255.0 * im.shape[0] * im.shape[1])
+			print '%03.0f %s' % (score,input_fname)
