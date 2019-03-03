@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- encoding: latin-1 -*-
 
-import sys,os.path,time,random,json,socket,boto3,panorama,image_rotation_optimiser
+import sys,os.path,time,random,json,socket,multiprocessing,boto3,panorama,image_rotation_optimiser
 
 def get_match_results(processing_batch_key):
 	try:
@@ -97,6 +97,18 @@ def write_output_file(match_results,output_fname=None,print_verbose=False):
 	panorama.write_output_file_matches(output_fd,matches,trustworthy_indexes,len(images))
 	panorama.write_output_file_footer(output_fd)
 
+def extract_keypoints_and_upload_to_s3(fname,s3_fname,print_verbose=False):
+	if print_verbose:
+		print 'Processing',fname
+
+	img=panorama.ImageKeypoints(fname,True)
+	# print '   ','+'.join(map(str,img.channel_keypoints))
+
+	if print_verbose:
+		print '   Uploading to S3',fname
+
+	img.save_to_s3(s3_fname)
+
 keyword_args={}
 positional_args=[]
 
@@ -130,15 +142,18 @@ else:
 
 	s3_fnames=[]
 
-	for idx,fname in enumerate(image_fnames):
-		if print_verbose:
-			print 'Processing',fname
-		img=panorama.ImageKeypoints(fname,True)
-		# print '   ','+'.join(map(str,img.channel_keypoints))
+	worker_pool=multiprocessing.Pool(8*2)
 
+	for idx,fname in enumerate(image_fnames):
 		s3_fname=processing_batch_key + '/' + str(idx) + '-' + os.path.basename(fname)
-		img.save_to_s3(s3_fname)
 		s3_fnames.append(s3_fname)
+		worker_pool.apply_async(extract_keypoints_and_upload_to_s3,(fname,s3_fname,print_verbose))
+
+	if print_verbose:
+		print 'Worker tasks submitted'
+
+	worker_pool.close()
+	worker_pool.join()
 
 	if print_verbose:
 		print 'Spawning match_images Lambda tasks'
