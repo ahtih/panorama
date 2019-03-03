@@ -401,28 +401,37 @@ def remove_insignificant_matches():
 	for (image1_fname,image2_fname),angle_deg in match_angle_deg.items():
 		if image1_fname < image2_fname:
 			continue
-		diagonal_fov_deg=min(images[image1_fname][5],images[image2_fname][5])
+		image1_record=images[image1_fname]
+		image2_record=images[image2_fname]
+		diagonal_fov_deg=min(image1_record[5],image2_record[5])
 
 		if angle_deg < 0.45 * diagonal_fov_deg:
 			continue
+
+		image12_error_deg=acos_degrees(1 - min(	image1_record[4] / float(len(image1_record[1])),
+												image2_record[4] / float(len(image2_record[1]))))
 
 		for image3_fname in frozenset(matched_image_fnames(image1_fname)).intersection(
 																		matched_image_fnames(image2_fname)):
 			image3_record=images[image3_fname]
 			diagonal_fov_deg3=min(diagonal_fov_deg,image3_record[5])
-			angle_deg3=max(	match_angle_deg[image1_fname,image3_fname],
-							match_angle_deg[image2_fname,image3_fname])
-			if angle_deg3 > 0.6 * angle_deg:
+			intermediate_angles=(	match_angle_deg[image1_fname,image3_fname],
+									match_angle_deg[image2_fname,image3_fname])
+			angle_deg3=sum(intermediate_angles)
+
+			if angle_deg3 > 1.2 * angle_deg or max(intermediate_angles) > 0.85 * angle_deg:
 				continue
+
 			if min(	match_nr_of_points[image1_fname,image3_fname],
-					match_nr_of_points[image2_fname,image3_fname]) < 7:
+					match_nr_of_points[image2_fname,image3_fname]) < 5:
 				continue
 
 			image3_error_deg=acos_degrees(1 - image3_record[4] / float(len(image3_record[1])))
-			if image3_error_deg > 6:
-				continue
 
-			# print angle_deg3/angle_deg,image1_fname,image2_fname,angle_deg,angle_deg3,match_nr_of_points[image1_fname,image2_fname]
+			# print angle_deg3/angle_deg,image1_fname,image2_fname,angle_deg,angle_deg3,match_nr_of_points[image1_fname,image2_fname],image3_fname,image3_error_deg/image12_error_deg
+
+			if image3_error_deg > 1.5 * image12_error_deg:
+				continue
 
 			matches_to_remove.add((image1_fname,image2_fname))
 			matches_to_remove.add((image2_fname,image1_fname))
