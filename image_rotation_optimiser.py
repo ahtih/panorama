@@ -410,32 +410,42 @@ def remove_insignificant_matches():
 
 		image12_error_deg=acos_degrees(1 - min(	image1_record[4] / float(len(image1_record[1])),
 												image2_record[4] / float(len(image2_record[1]))))
+		is_match_insignificant=False
 
-		for image3_fname in frozenset(matched_image_fnames(image1_fname)).intersection(
-																		matched_image_fnames(image2_fname)):
-			image3_record=images[image3_fname]
-			diagonal_fov_deg3=min(diagonal_fov_deg,image3_record[5])
-			intermediate_angles=(	match_angle_deg[image1_fname,image3_fname],
-									match_angle_deg[image2_fname,image3_fname])
-			angle_deg3=sum(intermediate_angles)
+		for img_fname in (image1_fname,image2_fname):
+			if is_match_insignificant:
+				break
 
-			if angle_deg3 > 1.2 * angle_deg or max(intermediate_angles) > 0.85 * angle_deg:
-				continue
+			for image3_fname in matched_image_fnames(img_fname):
+				if image3_fname in (image1_fname,image2_fname):
+					continue
+				if match_nr_of_points[img_fname,image3_fname] < 5:
+					continue
 
-			if min(	match_nr_of_points[image1_fname,image3_fname],
-					match_nr_of_points[image2_fname,image3_fname]) < 5:
-				continue
+				image3_record=images[image3_fname]
+				diagonal_fov_deg3=image3_record[5]
 
-			image3_error_deg=acos_degrees(1 - image3_record[4] / float(len(image3_record[1])))
+				intermediate_angles=tuple([acos_degrees(image_forward_vectors[image3_fname].dot(
+														image_forward_vectors[fname])) \
+																for fname in (image1_fname,image2_fname)])
 
-			# print angle_deg3/angle_deg,image1_fname,image2_fname,angle_deg,angle_deg3,match_nr_of_points[image1_fname,image2_fname],image3_fname,image3_error_deg/image12_error_deg
+				if sum(intermediate_angles) > 1.3 * angle_deg * diagonal_fov_deg3 / diagonal_fov_deg:
+					continue
 
-			if image3_error_deg > 1.5 * image12_error_deg:
-				continue
+				if max(intermediate_angles) > 0.85 * angle_deg:
+					continue
 
-			matches_to_remove.add((image1_fname,image2_fname))
-			matches_to_remove.add((image2_fname,image1_fname))
-			break
+				image3_error_deg=acos_degrees(1 - image3_record[4] / float(len(image3_record[1])))
+
+				# print image1_fname,image2_fname,intermediate_angles,angle_deg,match_nr_of_points[image1_fname,image2_fname],image3_fname,image3_error_deg,image12_error_deg
+
+				if image3_error_deg > max(10,1.5 * image12_error_deg):
+					continue
+
+				is_match_insignificant=True
+				matches_to_remove.add((image1_fname,image2_fname))
+				matches_to_remove.add((image2_fname,image1_fname))
+				break
 
 	for image1_fname,delete_image2_fname in matches_to_remove:
 		img_record=images[image1_fname]
