@@ -3,18 +3,17 @@
 
 # Program for viewing a 360 photosphere in a VR headset
 
-import os,math,random,time,traceback,fastkml,shapely
+import os,math,time,traceback
 import numpy,openvr,openvr.gl_renderer,glfw,openvr.glframework.glfw_app,textwrap
 import OpenGL.arrays.vbo
 from OpenGL.GL import *
 from OpenGL.GL.shaders import compileShader,compileProgram
 from PIL import Image,ImageDraw,ImageFont
+import geo_images
 
 MAX_QUALITY_CODE=13		# 8192 pixels x size
 VIEWABLE_IMAGES_PATH='viewable-images'
-EARTH_RADIUS_METERS=6371e3
 
-geo_images=dict()			# [id]=(lon_deg,lat_deg,center_azimuth_deg)
 next_image_links=dict()		# [id]=(distance_meters,world_azimuth_deg)
 
 class SphericalPanorama(object):
@@ -357,14 +356,12 @@ class NextImageLinksActor(object):
 		if self.shader is not None:
 			glDeleteProgram(self.shader)
 
-def is_valid_image_id(id):
-	return id and not set(id) - set('0123456789')
-
 def load_image(fname_or_id):
 	# Open equirectangular photosphere
 	global MAX_QUALITY_CODE
 
-	if isinstance(fname_or_id,int) or (is_valid_image_id(fname_or_id) and not os.access(fname_or_id,os.F_OK)):
+	if isinstance(fname_or_id,int) or \
+						(geo_images.is_valid_image_id(fname_or_id) and not os.access(fname_or_id,os.F_OK)):
 		for quality_code in range(MAX_QUALITY_CODE,10-1,-1):
 			viewable_images_fname=VIEWABLE_IMAGES_PATH + '/' + str(fname_or_id) + '/' + \
 																				str(quality_code) + '.jpg'
@@ -393,114 +390,25 @@ def load_image(fname_or_id):
 
 	return numpy.array(im)
 
-def calc_geo_distance_deg(lon1,lat1,lon2,lat2):
-	lon_weight=math.cos(math.radians(0.5*(lat1 + lat2)))
-	return math.sqrt(((lon1 - lon2)*lon_weight) ** 2 + (lat1 - lat2) ** 2)
-
-def cross_product(v1,v2):
-	return (v1[1]*v2[2] - v1[2]*v2[1],
-			v1[2]*v2[0] - v1[0]*v2[2],
-			v1[0]*v2[1] - v1[1]*v2[0])
-
-def dot_product(v1,v2):
-	return sum([a*b for a,b in zip(v1,v2)])
-
-def vec_len(vec):
-	return math.sqrt(sum([val*val for val in vec]))
-
-def calc_geo_distance_and_azimuth(lon1,lat1,lon2,lat2):
-	global EARTH_RADIUS_METERS
-
-	rel_lon2=lon2 - lon1
-
-	loc1=(0,-math.cos(math.radians(lat1)),math.sin(math.radians(lat1)))
-	loc2=(	+math.cos(math.radians(lat2))*math.sin(math.radians(rel_lon2)),
-			-math.cos(math.radians(lat2))*math.cos(math.radians(rel_lon2)),
-			+math.sin(math.radians(lat2)))
-
-	longitude_plane_normal=(-1,0,0)
-
-	cross_product_vec=cross_product(loc1,loc2)
-	cross_product_vec_len=vec_len(cross_product_vec)
-
-	distance_meters=EARTH_RADIUS_METERS * math.atan2(cross_product_vec_len,dot_product(loc1,loc2))
-
-	if cross_product_vec_len < 1e-10:
-		azimuth_deg=0
-	else:
-		azimuth_cos=dot_product(cross_product_vec,longitude_plane_normal) / float(cross_product_vec_len)
-		azimuth_deg=math.degrees(math.acos(azimuth_cos)) if abs(azimuth_cos) < 0.999999 else \
-																		(0 if azimuth_cos > 0 else math.pi)
-		if dot_product(loc1,cross_product(longitude_plane_normal,cross_product_vec)) > 0:
-			azimuth_deg*=-1
-
-	return (distance_meters,azimuth_deg)
-
-def select_next_image_links(cur_image_id):
-	global geo_images
-
-	cur_lon,cur_lat=geo_images[cur_image_id][:2]
-
-	selected_images=dict()		# [id]=(lon,lat,lon_weight,min_angle_square)
-
-	for id,(lon,lat,center_azimuth_deg) in random.sample(geo_images.items(),len(geo_images)):	#!!! In the future, sort by rating instead
-		for other_lon,other_lat,lon_weight,min_angle_square in selected_images.values():
-			if ((lon - other_lon)*lon_weight) ** 2 + (lat - other_lat) ** 2 < min_angle_square:
-				break
-		else:
-			if id != cur_image_id:
-				selected_images[id]=(lon,lat,math.cos(math.radians(lat)),
-											(0.2 * calc_geo_distance_deg(cur_lon,cur_lat,lon,lat)) ** 2)
-	return selected_images.keys()
-
-def process_KML_feature(e):
-	global geo_images
-
-	if hasattr(e,'features'):
-		for f in e.features():
-			process_KML_feature(f)
-		return
-
-	if hasattr(e,'geometry'):
-		if isinstance(e.geometry,shapely.geometry.point.Point) and is_valid_image_id(e.name):
-			center_azimuth_deg=None
-			if hasattr(e,'description'):
-				if e.description:
-					center_azimuth_deg=float(e.description.partition('deg')[0])
-			if center_azimuth_deg is not None:
-				geo_images[int(e.name)]=tuple(e.geometry.coords[0][:2]) + (center_azimuth_deg,)
-
-def load_geo_images_list():
-	k=fastkml.KML()
-	k.from_string(open(VIEWABLE_IMAGES_PATH + '/images.kml','r').read())
-	process_KML_feature(k)
-
 def go_to_image(id):
-	global cur_image_id,geo_images,cmdline_fnames,next_image_links
+	global cur_image_id,cmdline_fnames,next_image_links
 
 	cur_image_id=id
 
 	img=load_image(cmdline_fnames[id] if cmdline_fnames else id)
 
 	if not cmdline_fnames:
-		# print 'Next image links:'
+		next_image_links=geo_images.select_next_image_links(cur_image_id)
 
-		next_image_links=dict()
-		for id in select_next_image_links(cur_image_id):
-			distance_meters,azimuth_deg=calc_geo_distance_and_azimuth(
-													*(geo_images[cur_image_id][:2] + geo_images[id][:2]))
-			next_image_links[id]=(distance_meters,azimuth_deg)
-			# print '   ',id,int(distance_meters),int(azimuth_deg)
-
-	return (img,next_image_links,geo_images.get(cur_image_id,(None,None,0))[2])
+	return (img,next_image_links,geo_images.geo_images.get(cur_image_id,(None,None,0))[2])
 
 if __name__ == "__main__":
 	import sys
 
 	cmdline_fnames=sys.argv[1:]
 	if not cmdline_fnames:
-		load_geo_images_list()
-		cur_image_id=max(geo_images.keys())
+		geo_images.load_geo_images_list(VIEWABLE_IMAGES_PATH)
+		cur_image_id=max(geo_images.geo_images.keys())
 	else:
 		cur_image_id=0
 
@@ -588,7 +496,7 @@ if __name__ == "__main__":
 								cur_image_id+=touchpad_button_dir
 								cur_image_id%=len(cmdline_fnames)
 							else:
-								sorted_image_ids=sorted(geo_images.keys())
+								sorted_image_ids=sorted(geo_images.geo_images.keys())
 								idx=sorted_image_ids.index(cur_image_id)
 								cur_image_id=sorted_image_ids[(idx + touchpad_button_dir) % \
 																					len(sorted_image_ids)]
@@ -618,7 +526,7 @@ if __name__ == "__main__":
 				cur_time=time.time()
 
 				time_passed=cur_time - last_print_time
-				print 'Image #%d, %d frames displayed, %.0ffps, display_gl() takes %.0f%% of time' % \
+				print 'Image #%s, %d frames displayed, %.0ffps, display_gl() takes %.0f%% of time' % \
 												(cur_image_id,frames_displayed,
 												print_interval_frames / float(time_passed),
 												panorama_actor.display_gl_time * 100 / float(time_passed))
@@ -634,4 +542,4 @@ if __name__ == "__main__":
 		if center_azimuth_manual_changes:
 			print 'Manual center_azimuth_deg changes summary:'
 			for id,center_azimuth_deg in center_azimuth_manual_changes.items():
-				print 'ID %d %.0fdeg' % (id,center_azimuth_deg)
+				print 'ID #%s %.0fdeg' % (id,center_azimuth_deg)
