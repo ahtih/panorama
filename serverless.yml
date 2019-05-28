@@ -1,0 +1,36 @@
+service: panorama
+
+frameworkVersion: ">=1.2.0 <2.0.0"
+
+package:
+  exclude:
+    - ./**
+  include:
+    - aws_image_database.py
+    - geo_images.py
+  excludeDevDependencies: false
+
+provider:
+  name: aws
+  region: eu-west-1
+  runtime: python2.7
+  profile: panorama-serverless-cli
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action:
+        - s3:*
+      Resource: "arn:aws:s3:::panorama-geo-images/*"
+
+functions:
+  next_image_links:
+    handler: aws_image_database.get_next_image_links
+    memorySize: 128
+    timeout: 20
+    events:
+      - http:
+          path: next_image_links/{image_id}
+          method: get
+          request:
+            parameters:
+              paths:
+                image_id: true

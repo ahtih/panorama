@@ -1,0 +1,144 @@
+!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Panorama</title>
+    <meta name="description" content="Panorama">
+    <script src="aframe091.min.js"></script>
+    <script src="aframe-event-set-component.min.js"></script>
+    <script src="aframe-proxy-event-component.min.js"></script>
+  </head>
+  <body>
+	<script>
+		AFRAME.registerComponent('create-links',{
+			init: function() {
+					var links_component=this;
+
+					this.el.sceneEl.querySelector('#image-360').addEventListener('animationcomplete__fade',
+													function() { links_component.request_new_links(); });
+					this.request_new_links();
+					},
+
+			request_new_links: function() {
+					console.log('create-links: request_new_links');
+
+					var xmlhttp=new XMLHttpRequest();
+					var links_component=this;
+
+					xmlhttp.onreadystatechange=function() {
+							if (this.readyState == 4 && this.status == 200) {
+								console.log(this.responseText);		//!!!
+								links_component.create_links(JSON.parse(this.responseText));
+								}
+							};
+
+					var panorama_id=this.el.sceneEl.querySelector('#image-360').getAttribute('panorama_id');
+
+					xmlhttp.open('GET','https://06vyzk3h8h.execute-api.eu-west-1.amazonaws.com/dev/next_image_links/' +
+											panorama_id);
+					xmlhttp.send();
+					},
+
+			create_link_sprite: function(link_id,distance_meters,world_azimuth_deg) {
+					var elevation_deg=-35 + 3.5*Math.log(distance_meters);
+					var elevation_rad=elevation_deg * Math.PI / 180;
+
+					var sprite_distance=8;
+
+					var world_azimuth_rad=world_azimuth_deg * Math.PI / 180;
+					var xz_radius=sprite_distance * Math.cos(elevation_rad);
+
+					var pos_attrs={	x: xz_radius * Math.sin(world_azimuth_rad),
+									y: 1.6 + sprite_distance * Math.sin(elevation_rad),
+									z:-xz_radius * Math.cos(world_azimuth_rad)};
+
+					var el=document.createElement('a-entity');
+					el.className='link';
+
+					el.setAttribute('position',pos_attrs);
+					el.setAttribute('rotation',{y:-world_azimuth_deg});
+					el.setAttribute('event-set__click','_target: #image-360; _delay: 300; material.src: https://s3-eu-west-1.amazonaws.com/panorama-final-images/' + link_id + '/12.jpg; panorama_id: ' + link_id);
+
+					el.setAttribute('geometry',{'primitive': 'plane',
+												'height': 0.06 * sprite_distance,
+												'width': 0.06 * sprite_distance
+												});
+					el.setAttribute('material','shader: flat; transparent: true; src: #thumb');
+					el.setAttribute('event-set__mouseenter','scale: 1.2 1.2 1');
+					el.setAttribute('event-set__mouseleave','scale: 1 1 1');
+					el.setAttribute('proxy-event','event: click; to: #image-360; as: fade');
+					el.setAttribute('sound','on: click; src: #click-sound');
+
+					this.el.appendChild(el);
+
+					return pos_attrs;
+					},
+
+			create_link_text: function(distance_meters,world_azimuth_deg,sprite_pos) {
+					var text;
+					if (distance_meters < 1000)
+						text=distance_meters.toFixed(0) + 'm';
+					else if (distance_meters < 3000)
+						text=(distance_meters/1000.0).toFixed(1) + 'km';
+					else
+						text=(distance_meters/1000.0).toFixed(0) + 'km';
+
+					var el=document.createElement('a-text');
+
+					el.setAttribute('value',text);
+					el.setAttribute('position',{x:sprite_pos.x,y:sprite_pos.y - 0.4,z:sprite_pos.z});
+					el.setAttribute('rotation',{y:-world_azimuth_deg});
+					el.setAttribute('align','center');
+					el.setAttribute('width','6');
+
+					this.el.appendChild(el);
+					},
+
+			create_links: function(links) {
+					console.log('create-links: Creating links');
+
+					var old_links=this.el.querySelectorAll('[position]');
+
+					for (var i=0;i < old_links.length;i++)
+						old_links[i].parentNode.removeChild(old_links[i]);
+
+					for (var link_id in links) {
+						var distance_meters=links[link_id][0];
+						var world_azimuth_deg=links[link_id][1];
+
+						var sprite_pos=this.create_link_sprite(link_id,distance_meters,world_azimuth_deg);
+						this.create_link_text(distance_meters,world_azimuth_deg,sprite_pos);
+						}
+					}
+			});
+	</script>
+    <a-scene>
+      <a-assets>
+        <img id="thumb" crossorigin="anonymous" src="orange-donut.png">
+      </a-assets>
+
+      <!-- 360-degree image. -->
+      <a-sky id="image-360" radius="10" src="https://s3-eu-west-1.amazonaws.com/panorama-final-images/4692/12.jpg" panorama_id="4692"
+             animation__fade="property: components.material.material.color; type: color; from: #FFF; to: #000; dur: 300; startEvents: fade"
+             animation__fadeback="property: components.material.material.color; type: color; from: #000; to: #FFF; dur: 300; startEvents: animationcomplete__fade"></a-sky>
+
+      <!-- Image links. -->
+      <a-entity id="links" create-links>
+      </a-entity>
+
+      <!-- Camera + cursor. -->
+	  <a-entity id="camera" camera look-controls>
+		<a-cursor
+			id="cursor"
+			animation__click="property: scale; startEvents: click; from: 0.1 0.1 0.1; to: 1 1 1; dur: 150"
+			animation__fusing="property: fusing; startEvents: fusing; from: 1 1 1; to: 0.1 0.1 0.1; dur: 1500"
+			event-set__mouseenter="_event: mouseenter; color: springgreen"
+			event-set__mouseleave="_event: mouseleave; color: black"
+			raycaster="objects: .link; autoRefresh: true"
+			geometry="primitive: ring; radiusInner: 0.05; radiusOuter: 0.07"
+			position="0 0 -7.5">
+			</a-cursor>
+		</a-entity>
+	</a-scene>
+  </body>
+</html>
