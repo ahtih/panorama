@@ -106,5 +106,11 @@ def select_next_image_links(cur_image_id):
 if __name__ == '__main__':
 	import sys
 
+	if len(sys.argv) < 1+2:
+		print 'Usage:'
+		print
+		print '%s <viewable-images-dir> <output-pickle-file>' % (sys.argv[0],)
+		exit(1)
+
 	load_geo_images_list(sys.argv[1])
 	cPickle.dump(geo_images,open(sys.argv[2],'w'))
