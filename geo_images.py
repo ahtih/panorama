@@ -4,7 +4,7 @@ import math,random,cPickle
 
 EARTH_RADIUS_METERS=6371e3
 
-geo_images=dict()			# [id]=(lon_deg,lat_deg,center_azimuth_deg)
+geo_images=dict()			# [id]=(lon_deg,lat_deg,center_azimuth_deg,owner_uid,sharing_mode)
 
 def is_valid_image_id(id):
 	return id and not set(id) - set('0123456789')
@@ -20,14 +20,33 @@ def load_geo_images_list(kml_path='.'):
 				process_KML_feature(f)
 			return
 
-		if hasattr(e,'geometry'):
-			if isinstance(e.geometry,shapely.geometry.point.Point) and is_valid_image_id(e.name):
-				center_azimuth_deg=None
-				if hasattr(e,'description'):
-					if e.description:
-						center_azimuth_deg=float(e.description.partition('deg')[0])
-				if center_azimuth_deg is not None:
-					geo_images[e.name]=tuple(e.geometry.coords[0][:2]) + (center_azimuth_deg,)
+		if not hasattr(e,'geometry'):
+			return
+
+		if not isinstance(e.geometry,shapely.geometry.point.Point) or not is_valid_image_id(e.name):
+			return
+
+		if not hasattr(e,'description'):
+			return
+
+		if not e.description:
+			return
+
+		fields=e.description.split()
+		if len(fields) < 1:
+			return
+
+		center_azimuth_deg=float(fields[0].partition('deg')[0])
+
+		owner_uid=0
+		sharing_mode=None
+
+		if len(fields) >= 2:
+			owner_uid=int(fields[1])
+		if len(fields) >= 3:
+			sharing_mode=fields[2]
+
+		geo_images[e.name]=tuple(e.geometry.coords[0][:2]) + (center_azimuth_deg,owner_uid,sharing_mode)
 
 	k=fastkml.KML()
 	k.from_string(open(kml_path + '/images.kml','r').read())
@@ -81,14 +100,17 @@ def calc_geo_distance_and_azimuth(lon1,lat1,lon2,lat2):
 
 	return (distance_meters,azimuth_deg)
 
-def select_next_image_links(cur_image_id):
+def select_next_image_links(cur_image_id,viewer_uid=-1):
 	global geo_images
 
 	cur_lon,cur_lat=geo_images[cur_image_id][:2]
 
 	selected_images=dict()		# [id]=(lon,lat,lon_weight,min_angle_square)
 
-	for id,(lon,lat,center_azimuth_deg) in random.sample(geo_images.items(),len(geo_images)):	#!!! In the future, sort by rating instead
+	for id,(lon,lat,center_azimuth_deg,owner_uid,sharing_mode) in random.sample(
+										geo_images.items(),len(geo_images)):	#!!! In the future, sort by rating instead
+		if (sharing_mode or 'private') != 'public' and viewer_uid != owner_uid:
+			continue
 		for other_lon,other_lat,lon_weight,min_angle_square in selected_images.values():
 			if ((lon - other_lon)*lon_weight) ** 2 + (lat - other_lat) ** 2 < min_angle_square:
 				break
