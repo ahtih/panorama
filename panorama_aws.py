@@ -101,7 +101,12 @@ def extract_keypoints_and_upload_to_s3(fname,s3_fname,print_verbose=False):
 	if print_verbose:
 		print 'Processing',fname
 
-	img=panorama.ImageKeypoints(fname,True)
+	try:
+		img=panorama.ImageKeypoints(fname,True)
+	except Exception as e:
+		print 'Error:',fname,e
+		raise
+
 	# print '   ','+'.join(map(str,img.channel_keypoints))
 
 	if print_verbose:
