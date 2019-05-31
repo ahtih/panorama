@@ -137,9 +137,20 @@ if __name__ == '__main__':
 	viewable_images_dir=sys.argv[1]
 	load_geo_images_list(viewable_images_dir)
 
+	public_images=0
+	private_images=0
+
 	for image_id in geo_images:
 		dirname=viewable_images_dir + '/' + image_id
 		if not os.access(dirname,os.F_OK):
 			print 'Warning: missing image directory',dirname
 
+		if geo_images[image_id][4] == 'public':
+			public_images+=1
+		else:
+			private_images+=1
+
+	print '%d public images, %d private images' % (public_images,private_images)
+
 	cPickle.dump(geo_images,open(sys.argv[2],'w'))
+	print 'Pickle file written'
