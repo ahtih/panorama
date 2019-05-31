@@ -14,7 +14,7 @@ import geo_images
 MAX_QUALITY_CODE=13		# 8192 pixels x size
 VIEWABLE_IMAGES_PATH='viewable-images'
 
-next_image_links=dict()		# [id]=(distance_meters,world_azimuth_deg)
+next_image_links=dict()		# [id]=(distance_meters,world_azimuth_deg,center_azimuth_deg)
 
 class SphericalPanorama(object):
 	def __init__(self,image,center_azimuth_deg=0):
@@ -208,7 +208,7 @@ class NextImageLinksActor(object):
 		self.texture_images_list.append(self.north_sprite)
 
 		next_image_text_sprites=dict()
-		for id,(distance_meters,world_azimuth_deg) in self.next_image_links.items():
+		for id,(distance_meters,world_azimuth_deg,center_azimuth_deg) in self.next_image_links.items():
 			if distance_meters < 1000:
 				text='%.0fm' % (distance_meters,)
 			elif distance_meters < 3000:
@@ -246,7 +246,7 @@ class NextImageLinksActor(object):
 
 		sprite_vertexes=self.calc_sprite_vertexes(self.north_sprite,0,25,5)
 
-		for id,(distance_meters,world_azimuth_deg) in self.next_image_links.items():
+		for id,(distance_meters,world_azimuth_deg,center_azimuth_deg) in self.next_image_links.items():
 			size_deg=max(0.7,8 - 0.5*math.log(distance_meters))
 			elevation_deg=self.next_image_link_elevation_deg(distance_meters)
 			sprite_vertexes+=self.calc_sprite_vertexes(self.next_image_sprite,world_azimuth_deg,
@@ -263,7 +263,7 @@ class NextImageLinksActor(object):
 
 		best_image_id=None
 		best_dist=0.25**2
-		for id,(distance_meters,world_azimuth_deg) in self.next_image_links.items():
+		for id,(distance_meters,world_azimuth_deg,center_azimuth_deg) in self.next_image_links.items():
 			v=numpy.array(self.calc_sprite_point(world_azimuth_deg,
 													self.next_image_link_elevation_deg(distance_meters)))
 			v_in_camera_frame=numpy.matmul(v,self.last_modelview_matrix)

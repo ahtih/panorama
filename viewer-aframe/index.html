@@ -27,7 +27,7 @@
 
 					xmlhttp.onreadystatechange=function() {
 							if (this.readyState == 4 && this.status == 200) {
-								console.log(this.responseText);		//!!!
+								// console.log(this.responseText);
 								links_component.create_links(JSON.parse(this.responseText));
 								}
 							};
@@ -39,7 +39,7 @@
 					xmlhttp.send();
 					},
 
-			create_link_sprite: function(link_id,distance_meters,world_azimuth_deg) {
+			create_link_sprite: function(link_id,distance_meters,world_azimuth_deg,center_azimuth_deg) {
 					var elevation_deg=-35 + 3.5*Math.log(distance_meters);
 					var elevation_rad=elevation_deg * Math.PI / 180;
 
@@ -57,7 +57,9 @@
 
 					el.setAttribute('position',pos_attrs);
 					el.setAttribute('rotation',{y:-world_azimuth_deg});
-					el.setAttribute('event-set__click','_target: #image-360; _delay: 300; material.src: https://s3-eu-west-1.amazonaws.com/panorama-final-images/' + link_id + '/12.jpg; panorama_id: ' + link_id);
+					el.setAttribute('event-set__click',
+							'_target: #image-360; _delay: 300; material.src: https://s3-eu-west-1.amazonaws.com/panorama-final-images/' + link_id + '/12.jpg; panorama_id: ' + link_id + '; PHI-START: ' + (center_azimuth_deg + 90));
+							// For some reason PHI-START must be capitalised, otherwise it is translated to "phistart" by a-frame
 
 					el.setAttribute('geometry',{'primitive': 'plane',
 												'height': 0.06 * sprite_distance,
@@ -105,8 +107,10 @@
 					for (var link_id in links) {
 						var distance_meters=links[link_id][0];
 						var world_azimuth_deg=links[link_id][1];
+						var center_azimuth_deg=links[link_id][2];
 
-						var sprite_pos=this.create_link_sprite(link_id,distance_meters,world_azimuth_deg);
+						var sprite_pos=this.create_link_sprite(link_id,distance_meters,world_azimuth_deg,
+																center_azimuth_deg);
 						this.create_link_text(distance_meters,world_azimuth_deg,sprite_pos);
 						}
 					}
@@ -117,16 +121,19 @@
         <img id="thumb" crossorigin="anonymous" src="orange-donut.png">
       </a-assets>
 
-      <!-- 360-degree image. -->
-      <a-sky id="image-360" radius="10" src="https://s3-eu-west-1.amazonaws.com/panorama-final-images/4692/12.jpg" panorama_id="4692"
-             animation__fade="property: components.material.material.color; type: color; from: #FFF; to: #000; dur: 300; startEvents: fade"
-             animation__fadeback="property: components.material.material.color; type: color; from: #000; to: #FFF; dur: 300; startEvents: animationcomplete__fade"></a-sky>
+      <!-- Photosphere image -->
+      <a-sky id="image-360"
+			radius="10"
+			src="https://s3-eu-west-1.amazonaws.com/panorama-final-images/4692/12.jpg"
+			phi-start="0"
+			panorama_id="4692"
+			animation__fade="property: components.material.material.color; type: color; from: #FFF; to: #000; dur: 300; startEvents: fade"
+			animation__fadeback="property: components.material.material.color; type: color; from: #000; to: #FFF; dur: 300; startEvents: animationcomplete__fade">
+		</a-sky>
 
-      <!-- Image links. -->
       <a-entity id="links" create-links>
       </a-entity>
 
-      <!-- Camera + cursor. -->
 	  <a-entity id="camera" camera look-controls>
 		<a-cursor
 			id="cursor"

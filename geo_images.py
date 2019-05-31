@@ -101,6 +101,8 @@ def calc_geo_distance_and_azimuth(lon1,lat1,lon2,lat2):
 	return (distance_meters,azimuth_deg)
 
 def select_next_image_links(cur_image_id,viewer_uid=-1):
+		# Returns a dict: [id]=(distance_meters,azimuth_deg,center_azimuth_deg)
+
 	global geo_images
 
 	cur_lon,cur_lat=geo_images[cur_image_id][:2]
@@ -121,7 +123,8 @@ def select_next_image_links(cur_image_id,viewer_uid=-1):
 
 	results=dict()
 	for id in selected_images:
-		results[id]=calc_geo_distance_and_azimuth(*(geo_images[cur_image_id][:2] + geo_images[id][:2]))
+		results[id]=calc_geo_distance_and_azimuth(*(geo_images[cur_image_id][:2] + geo_images[id][:2])) + \
+					(geo_images[id][2],)
 
 	return results
 
