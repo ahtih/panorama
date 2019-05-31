@@ -126,7 +126,7 @@ def select_next_image_links(cur_image_id,viewer_uid=-1):
 	return results
 
 if __name__ == '__main__':
-	import sys
+	import sys,os
 
 	if len(sys.argv) < 1+2:
 		print 'Usage:'
@@ -134,5 +134,12 @@ if __name__ == '__main__':
 		print '%s <viewable-images-dir> <output-pickle-file>' % (sys.argv[0],)
 		exit(1)
 
-	load_geo_images_list(sys.argv[1])
+	viewable_images_dir=sys.argv[1]
+	load_geo_images_list(viewable_images_dir)
+
+	for image_id in geo_images:
+		dirname=viewable_images_dir + '/' + image_id
+		if not os.access(dirname,os.F_OK):
+			print 'Warning: missing image directory',dirname
+
 	cPickle.dump(geo_images,open(sys.argv[2],'w'))
