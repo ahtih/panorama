@@ -58,7 +58,7 @@
 					el.setAttribute('position',pos_attrs);
 					el.setAttribute('rotation',{y:-world_azimuth_deg});
 					el.setAttribute('event-set__click',
-							'_target: #image-360; _delay: 300; material.src: https://s3-eu-west-1.amazonaws.com/panorama-final-images/' + link_id + '/12.jpg; panorama_id: ' + link_id + '; PHI-START: ' + (center_azimuth_deg + 90));
+							'_target: #image-360; _delay: 300; material.src: http://panorama-final-images.s3-website-eu-west-1.amazonaws.com/' + link_id + '/12.jpg; panorama_id: ' + link_id + '; PHI-START: ' + (center_azimuth_deg + 90));
 							// For some reason PHI-START must be capitalised, otherwise it is translated to "phistart" by a-frame
 
 					el.setAttribute('geometry',{'primitive': 'plane',
@@ -124,7 +124,7 @@
       <!-- Photosphere image -->
       <a-sky id="image-360"
 			radius="10"
-			src="https://s3-eu-west-1.amazonaws.com/panorama-final-images/4692/12.jpg"
+			src="http://panorama-final-images.s3-website-eu-west-1.amazonaws.com/4692/12.jpg"
 			phi-start="0"
 			panorama_id="4692"
 			animation__fade="property: components.material.material.color; type: color; from: #FFF; to: #000; dur: 300; startEvents: fade"
