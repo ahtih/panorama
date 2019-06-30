@@ -234,7 +234,7 @@ elif len(positional_args) == 1:
 		print 'Writing keypoints to S3'
 		ikp.save_to_s3('img2.keypoints')	#!!!
 	else:
-		ikp.show_img_with_keypoints(0)
+		ikp.show_img_with_keypoints()
 else:
 	if '--dynamodb' in keyword_args:
 		panorama.process_match_and_write_to_dynamodb(*positional_args)

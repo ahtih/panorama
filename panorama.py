@@ -161,12 +161,21 @@ class ImageKeypoints:
 
 		return coverage_sum
 
-	def show_img_with_keypoints(self,channel_idx,highlight_indexes=tuple()):
-		for idx,xy_deg in enumerate(self.channels[channel_idx].xys):
-			highlight=(idx in highlight_indexes)
-			color=(255,0,0) if highlight else (0,255,0)
-			cv2.circle(self.img,self.degrees_to_pixels(*xy_deg),
-												(15 if highlight else 10) / RESIZE_FACTOR,color,-1)
+	def show_img_with_keypoints(self,highlight_indexes=tuple()):
+		if self.img is None:
+			print 'ImageKeypoints.show_img_with_keypoints(): Image data is deallocated'
+			exit(1)
+
+		for channel_idx,chan in enumerate(self.channels):
+			for idx,xy_deg in enumerate(chan.xys):
+				highlight=((channel_idx,idx) in highlight_indexes)
+				color=[0,0,0]
+				color[channel_idx % 2]=255
+				if highlight:
+					color[2]=255
+				xy_pixels=self.degrees_to_pixels(*xy_deg)
+				cv2.circle(self.img,(xy_pixels[0]/RESIZE_FACTOR,xy_pixels[1]/RESIZE_FACTOR),
+												(15 if highlight else 10) / RESIZE_FACTOR,tuple(color),-1)
 		import matplotlib.pyplot
 		matplotlib.pyplot.imshow(self.img)
 		matplotlib.pyplot.show()
@@ -202,7 +211,7 @@ def calc_shift_for_angle(img1,img2,matches,angle_deg):
 
 	xy_deltas=[]
 	histogram=dict()
-	for distance,x1,y1,x2,y2 in matches[:1000]:
+	for distance,x1,y1,x2,y2,channel_idx,kp_idx in matches[:1000]:
 		xd=x1 - (x2 * angle_cos - y2 * angle_sin)
 		yd=y1 - (x2 * angle_sin + y2 * angle_cos)
 
@@ -273,13 +282,14 @@ def find_matches(img1,img2):
 	global keypoint_matcher
 
 	matches=[]
-	for chan1,chan2 in zip(img1.channels,img2.channels):
+	for channel_idx,(chan1,chan2) in enumerate(zip(img1.channels,img2.channels)):
 		for match_pair in keypoint_matcher.knnMatch(chan1.descriptors,chan2.descriptors,k=2):
 			if len(match_pair) == 2:
 				m,m2=match_pair
 				if m.distance < 0.8 * m2.distance:
 					matches.append((m.distance,	chan1.xys[m.queryIdx][0],chan1.xys[m.queryIdx][1],
-												chan2.xys[m.trainIdx][0],chan2.xys[m.trainIdx][1]))
+												chan2.xys[m.trainIdx][0],chan2.xys[m.trainIdx][1],
+												channel_idx,m.queryIdx))
 
 	matches.sort(key=operator.itemgetter(0))
 
@@ -317,8 +327,8 @@ def find_matches(img1,img2):
 	if best_score <= 0 or not best_inliers:
 		return (debug_str,)
 
-	# src_pts=numpy.float32([(x1,y1) for distance,x1,y1,x2,y2 in matches[:1000]]).reshape(-1,1,2)
-	# dst_pts=numpy.float32([(x2,y2) for distance,x1,y1,x2,y2 in matches[:1000]]).reshape(-1,1,2)
+	# src_pts=numpy.float32([(x1,y1) for distance,x1,y1,x2,y2,c,i in matches[:1000]]).reshape(-1,1,2)
+	# dst_pts=numpy.float32([(x2,y2) for distance,x1,y1,x2,y2,c,i in matches[:1000]]).reshape(-1,1,2)
 	# homography_matrix=cv2.findHomography(src_pts,dst_pts,cv2.RANSAC,5.0)[0]
 	# print homography_matrix
 
@@ -332,12 +342,13 @@ def find_matches(img1,img2):
 			if (xy[0] - xy_pair[0])**2 + (xy[1] - xy_pair[1])**2 < max_dist_square:
 				break
 		else:
-			representative_xy_pairs.append(xy + matches[i][3:] + (i,))
-			matched_points.append((img1.degrees_to_pixels(*xy) + img2.degrees_to_pixels(*matches[i][3:])))
+			xy2=matches[i][3:5]
+			representative_xy_pairs.append(xy + xy2 + (i,))
+			matched_points.append((img1.degrees_to_pixels(*xy) + img2.degrees_to_pixels(*xy2)))
 			if len(representative_xy_pairs) >= 50:
 				break
 
-	# img1.show_img_with_keypoints([matches[xy_pair[4]].queryIdx for xy_pair in representative_xy_pairs])
+	# img1.show_img_with_keypoints([matches[xy_pair[4]][5:] for xy_pair in representative_xy_pairs])
 
 	return (debug_str,matched_points,best_score,best_count,best_angle_deg,best_xd,best_yd)
 
