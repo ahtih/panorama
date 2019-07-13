@@ -20,23 +20,6 @@ module.exports.resources=(serverless) => {
 				        		'ErrorDocument': 'index.html',
 					        	'RoutingRules': [
 									{ 'RedirectRule': {
-											'HostName': {
-												'Fn::Join': [
-													'',
-													[	{'Ref': 'ApiGatewayRestApi'},
-														'.execute-api.',
-														{'Ref': 'AWS::Region'},
-														'.amazonaws.com'
-														]
-													]
-												},
-											'ReplaceKeyPrefixWith': 'dev/next_image_links/'
-											},
-										'RoutingRuleCondition': {
-											'KeyPrefixEquals': 'next_image_links/'
-											}
-										},
-									{ 'RedirectRule': {
 											'HostName': 'panorama-final-images.s3-website-eu-west-1.amazonaws.com'
 											},
 										'RoutingRuleCondition': {

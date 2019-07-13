@@ -7,6 +7,7 @@
     <script src="aframe091.min.js"></script>
     <script src="aframe-event-set-component.min.js"></script>
     <script src="aframe-proxy-event-component.min.js"></script>
+	<script src="rest-api-id.js"></script>
   </head>
   <body>
 	<script>
@@ -34,7 +35,7 @@
 
 					var panorama_id=this.el.sceneEl.querySelector('#image-360').getAttribute('panorama_id');
 
-					xmlhttp.open('GET','/next_image_links/' + panorama_id);
+					xmlhttp.open('GET','https://' + rest_api_id + '.execute-api.eu-west-1.amazonaws.com/dev/next_image_links/' + panorama_id);
 					xmlhttp.send();
 					},
 
