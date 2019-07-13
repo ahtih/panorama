@@ -34,8 +34,7 @@
 
 					var panorama_id=this.el.sceneEl.querySelector('#image-360').getAttribute('panorama_id');
 
-					xmlhttp.open('GET','https://06vyzk3h8h.execute-api.eu-west-1.amazonaws.com/dev/next_image_links/' +
-											panorama_id);
+					xmlhttp.open('GET','/next_image_links/' + panorama_id);
 					xmlhttp.send();
 					},
 

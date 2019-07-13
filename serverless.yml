@@ -34,3 +34,6 @@ functions:
             parameters:
               paths:
                 image_id: true
+
+resources:
+  Resources: ${file(generate-webapp-buckets-config.js):resources}
