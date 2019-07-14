@@ -11,8 +11,9 @@ def worker_func(args):
 		global images_with_keypoints
 		idx1,idx2=args
 
-		result=panorama.find_matches(	images_with_keypoints[idx1],
-										images_with_keypoints[idx2])
+		img_pair=(images_with_keypoints[idx1],images_with_keypoints[idx2])
+		result=panorama.calc_representative_coherent_matches(*(img_pair + \
+																	panorama.find_raw_matches(*img_pair)))
 		output_str=''
 		match_metrics=tuple()
 		if len(result) > 1:

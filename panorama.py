@@ -211,7 +211,7 @@ def calc_shift_for_angle(img1,img2,matches,angle_deg):
 
 	xy_deltas=[]
 	histogram=dict()
-	for distance,x1,y1,x2,y2,channel_idx,kp_idx in matches[:1000]:
+	for distance,x1,y1,x2,y2,channel_idx,kp_idx in matches:
 		xd=x1 - (x2 * angle_cos - y2 * angle_sin)
 		yd=y1 - (x2 * angle_sin + y2 * angle_cos)
 
@@ -278,7 +278,7 @@ def calc_shift_ratio(xd,yd):
 	abs_shifts=(abs(xd),abs(yd))
 	return min(abs_shifts) / float(max(1,max(abs_shifts)))
 
-def find_matches(img1,img2):
+def find_raw_matches(img1,img2):
 	global keypoint_matcher
 
 	matches=[]
@@ -293,7 +293,11 @@ def find_matches(img1,img2):
 
 	matches.sort(key=operator.itemgetter(0))
 
-	debug_str='%d matches' % len(matches)
+	full_nr_of_matches=len(matches)
+	return (matches[:1000],full_nr_of_matches)
+
+def calc_representative_coherent_matches(img1,img2,matches,full_nr_of_matches):
+	debug_str='%d matches' % (full_nr_of_matches,)
 
 	if not matches:
 		return (debug_str,)
@@ -365,7 +369,7 @@ def process_match_and_write_to_dynamodb(processing_batch_key,s3_fname1,s3_fname2
 	img1=ImageKeypoints(s3_fname1,False,S3_KEYPOINTS_BUCKET_NAME)
 	img2=ImageKeypoints(s3_fname2,False,S3_KEYPOINTS_BUCKET_NAME)
 
-	result=find_matches(img1,img2)
+	result=calc_representative_coherent_matches(img1,img2,*find_raw_matches(img1,img2))
 
 	item={'processing_batch_key': processing_batch_key,
 			's3_filenames': s3_fname1 + '_' + s3_fname2,
