@@ -43,7 +43,8 @@ def match_images(event):
 	try:
 		dynamodb_secondary_key=event['s3_fname1'] + '_' + event['s3_fname2']
 		panorama.process_match_and_write_to_dynamodb(processing_batch_key,
-						event['s3_fname1'],event['s3_fname2'],event['orig_fname1'],event['orig_fname2'])
+						event['s3_fname1'],event['s3_fname2'],event['orig_fname1'],event['orig_fname2'],
+						event.get('hint_angles_deg'))
 		return 'OK'
 	except:
 		error_text=traceback.format_exc(20)

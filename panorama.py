@@ -1,6 +1,6 @@
 # -*- encoding: latin-1 -*-
 
-import sys,math,operator,cPickle,decimal,numpy,cv2,exif,boto3,sky_detection
+import sys,math,operator,cPickle,decimal,struct,numpy,cv2,exif,boto3,boto3.dynamodb.types,sky_detection
 from quaternion import Quaternion
 
 RESIZE_FACTOR=4
@@ -20,6 +20,8 @@ keypoint_matcher=cv2.FlannBasedMatcher({'algorithm': 6, 'table_number': 6, 'key_
 clahe=cv2.createCLAHE(clipLimit=40,tileGridSize=(16,16))
 
 classifier_params=(0.02,0.68,-0.21,-0.4,-0.63,-10.542)
+
+degrees_to_binary_coeff=32767/180.0
 
 class ImageKeypoints:
 	class Keypoints:
@@ -204,6 +206,8 @@ class ImageKeypoints:
 		self.channel_keypoints=tuple([len(chan.xys) for chan in self.channels])
 
 def calc_shift_for_angle(img1,img2,matches,angle_deg):
+	# angle_deg rotates img2 clockwise
+
 	angle_sin=math.sin(math.radians(angle_deg))
 	angle_cos=math.cos(math.radians(angle_deg))
 
@@ -211,7 +215,7 @@ def calc_shift_for_angle(img1,img2,matches,angle_deg):
 
 	xy_deltas=[]
 	histogram=dict()
-	for distance,x1,y1,x2,y2,channel_idx,kp_idx in matches:
+	for distance,x1,y1,x2,y2,weight in matches:
 		xd=x1 - (x2 * angle_cos - y2 * angle_sin)
 		yd=y1 - (x2 * angle_sin + y2 * angle_cos)
 
@@ -222,13 +226,13 @@ def calc_shift_for_angle(img1,img2,matches,angle_deg):
 
 		if idx not in histogram:
 			histogram[idx]=0
-		histogram[idx]+=1
+		histogram[idx]+=weight
 
 	best_idx=None
-	best_count=0
+	best_weight_sum=0
 	best_coverage=1
-	for idx,count in histogram.items():
-		if count < 5:
+	for idx,weight_sum in histogram.items():
+		if weight_sum < 5:
 			continue
 
 		img2_keypoints_coverage=max(0.1,img2.calc_keypoints_coverage(img1,angle_sin,angle_cos,
@@ -237,8 +241,8 @@ def calc_shift_for_angle(img1,img2,matches,angle_deg):
 		# area_coverage=max(0.1,max(0,1 - abs(idx[0] * histogram_bin_pixels) / float(img2_size[0])) * \
 		#						max(0,1 - abs(idx[1] * histogram_bin_pixels) / float(img2_size[1])))
 
-		if best_count / float(best_coverage) <= count / float(img2_keypoints_coverage):
-			best_count=count
+		if best_weight_sum / float(best_coverage) <= weight_sum / float(img2_keypoints_coverage):
+			best_weight_sum=weight_sum
 			best_coverage=img2_keypoints_coverage
 			best_idx=idx
 
@@ -262,11 +266,11 @@ def calc_shift_for_angle(img1,img2,matches,angle_deg):
 	xd=xd_sum / float(len(inliers))
 	yd=yd_sum / float(len(inliers))
 
-	best_count+=len(inliers)
+	best_weight_sum+=len(inliers)
 
-	# print angle_deg,best_count,best_coverage,xd,yd
+	# print angle_deg,best_weight_sum,best_coverage,xd,yd
 
-	return (best_count,best_coverage,inliers,xd,yd)
+	return (best_weight_sum,best_coverage,inliers,xd,yd)
 
 def calc_classifier_decision_value(inputs,params):
 	decision_value=sum(value*weight for value,weight in zip(inputs,params))
@@ -296,7 +300,7 @@ def find_raw_matches(img1,img2):
 	full_nr_of_matches=len(matches)
 	return (matches[:1000],full_nr_of_matches)
 
-def calc_representative_coherent_matches(img1,img2,matches,full_nr_of_matches):
+def calc_representative_coherent_matches(img1,img2,matches,full_nr_of_matches,hint_angles=None):
 	debug_str='%d matches' % (full_nr_of_matches,)
 
 	if not matches:
@@ -304,9 +308,26 @@ def calc_representative_coherent_matches(img1,img2,matches,full_nr_of_matches):
 
 	debug_str+=', distances %.0f:%.0f' % (matches[0][0],matches[:30][-1][0])
 
+	if hint_angles is not None:
+		img1_hint_sin=math.sin(math.radians(hint_angles[0]))
+		img1_hint_cos=math.cos(math.radians(hint_angles[0]))
+		img2_hint_sin=math.sin(math.radians(hint_angles[2]))
+		img2_hint_cos=math.cos(math.radians(hint_angles[2]))
+
+	weighted_matches=[]
+	for match in matches:
+		distance,x1,y1,x2,y2=match[:5]		# x increases towards right, y increases towards down
+		weight=1
+		if hint_angles is not None:
+			img1_weight=math.cos(math.radians(x1*img1_hint_sin - y1*img1_hint_cos - hint_angles[1]))
+			img2_weight=math.cos(math.radians(x2*img2_hint_sin - y2*img2_hint_cos - hint_angles[3]))
+			# weight=1.2 * ((img1_weight * img2_weight) ** 4)		#!!! Tune this
+
+		weighted_matches.append((distance,x1,y1,x2,y2,weight))
+
 	best_angle_deg=0
 	best_score=0
-	best_count=0
+	best_weight_sum=0
 	best_coverage=1
 	best_inliers=None	# In increasing matches[] index order
 	best_xd=0
@@ -314,19 +335,26 @@ def calc_representative_coherent_matches(img1,img2,matches,full_nr_of_matches):
 
 	if matches[0][0] < 30:
 		for angle_deg in range(-180,+180,1):
-			count,coverage,inliers,xd,yd=calc_shift_for_angle(img1,img2,matches,angle_deg)
-			score=int(count / float(coverage))
+
+			score_coeff=1
+			if hint_angles is not None:
+				error_deg=angle_deg - (hint_angles[0] - hint_angles[2])
+				error_deg=abs((abs(error_deg) + 180) % 360 - 180)
+				score_coeff+=1.5 * max(0,1 - error_deg / 10.0)	#!!! Tune this
+
+			weight_sum,coverage,inliers,xd,yd=calc_shift_for_angle(img1,img2,weighted_matches,angle_deg)
+			score=int(round(weight_sum * score_coeff / float(coverage)))
 
 			if score > best_score:
 				best_score=score
-				best_count=count
+				best_weight_sum=weight_sum
 				best_coverage=coverage
 				best_inliers=inliers
 				best_xd=xd
 				best_yd=yd
 				best_angle_deg=angle_deg
 
-	debug_str+=', %+ddeg, score %d/%.2f=%d, shift %+.0fdeg,%+.0fdeg' % (best_angle_deg,best_count,
+	debug_str+=', %+ddeg, score %.0f/%.2f=%d, shift %+.0fdeg,%+.0fdeg' % (best_angle_deg,best_weight_sum,
 															best_coverage,best_score,best_xd,best_yd)
 	if best_score <= 0 or not best_inliers:
 		return (debug_str,)
@@ -348,13 +376,22 @@ def calc_representative_coherent_matches(img1,img2,matches,full_nr_of_matches):
 		else:
 			xy2=matches[i][3:5]
 			representative_xy_pairs.append(xy + xy2 + (i,))
+			# print xy,xy2,weighted_matches[i][5]
 			matched_points.append((img1.degrees_to_pixels(*xy) + img2.degrees_to_pixels(*xy2)))
 			if len(representative_xy_pairs) >= 50:
 				break
 
 	# img1.show_img_with_keypoints([matches[xy_pair[4]][5:] for xy_pair in representative_xy_pairs])
+	# print debug_str
 
-	return (debug_str,matched_points,best_score,best_count,best_angle_deg,best_xd,best_yd)
+	return (debug_str,matched_points,best_score,int(round(best_weight_sum)),best_angle_deg,best_xd,best_yd)
+
+def read_dynamodb_item(processing_batch_key,s3_fnames):
+	global DYNAMODB_TABLE_NAME,aws_session
+
+	table=aws_session.resource('dynamodb').Table(DYNAMODB_TABLE_NAME)
+	return table.get_item(Key={'processing_batch_key': processing_batch_key,
+								's3_filenames': s3_fnames}).get('Item')
 
 def write_dynamodb_item(item):
 	global DYNAMODB_TABLE_NAME,aws_session
@@ -362,17 +399,57 @@ def write_dynamodb_item(item):
 	table=aws_session.resource('dynamodb').Table(DYNAMODB_TABLE_NAME)
 	table.put_item(Item=item)
 
+def pack_raw_matches_to_dynamodb(matches):
+	global degrees_to_binary_coeff
+
+	char_string=''
+
+	for match in matches:
+		binary_numbers=[int(round(deg * degrees_to_binary_coeff)) for deg in match[1:5]]
+		if max(-min(binary_numbers),max(binary_numbers)) <= 32767:
+			char_string+=struct.pack('!B4h',int(match[0]),*binary_numbers)
+
+	return boto3.dynamodb.types.Binary(char_string or '\x00')
+
+def unpack_raw_matches_from_dynamodb(dynamodb_value):
+	matches=[]
+
+	for i in range(0,len(dynamodb_value.value),1+4*2):
+		chars=dynamodb_value.value[i:(i+1+4*2)]
+		if len(chars) != 1+4*2:
+			continue
+		values=struct.unpack('!B4h',chars)
+		deg_values=[value / float(degrees_to_binary_coeff) for value in values[1:]]
+		matches.append((values[0],) + tuple(deg_values))
+
+	return matches
+
 def process_match_and_write_to_dynamodb(processing_batch_key,s3_fname1,s3_fname2,
-																		orig_fname1=None,orig_fname2=None):
+													orig_fname1=None,orig_fname2=None,hint_angles=None):
 	global S3_KEYPOINTS_BUCKET_NAME
 
-	img1=ImageKeypoints(s3_fname1,False,S3_KEYPOINTS_BUCKET_NAME)
+	s3_fnames=s3_fname1 + '_' + s3_fname2
+
+	matches=None
+	full_nr_of_matches=None
+
+	if hint_angles is not None:
+		item=read_dynamodb_item(processing_batch_key,s3_fnames)
+		if item is not None:
+			if 'full_nr_of_matches' in item and 'raw_matches' in item:
+				full_nr_of_matches=int(item['full_nr_of_matches'])
+				matches=unpack_raw_matches_from_dynamodb(item['raw_matches'])
+
+	img1=ImageKeypoints(s3_fname1,False,S3_KEYPOINTS_BUCKET_NAME)	#!!! Do this only if find_raw_matches() is called
 	img2=ImageKeypoints(s3_fname2,False,S3_KEYPOINTS_BUCKET_NAME)
 
-	result=calc_representative_coherent_matches(img1,img2,*find_raw_matches(img1,img2))
+	if matches is None:
+		matches,full_nr_of_matches=find_raw_matches(img1,img2)
+
+	result=calc_representative_coherent_matches(img1,img2,matches,full_nr_of_matches,hint_angles)
 
 	item={'processing_batch_key': processing_batch_key,
-			's3_filenames': s3_fname1 + '_' + s3_fname2,
+			's3_filenames': s3_fnames,
 			'debug_str': result[0],
 			'img1_fname': orig_fname1 or s3_fname1,
 			'img2_fname': orig_fname2 or s3_fname2,
@@ -385,7 +462,9 @@ def process_match_and_write_to_dynamodb(processing_batch_key,s3_fname1,s3_fname2
 			'img2_width': decimal.Decimal(str(img2.orig_img_shape[1])),
 			'img2_height': decimal.Decimal(str(img2.orig_img_shape[0])),
 			'img1_channel_keypoints': list(img1.channel_keypoints),
-			'img2_channel_keypoints': list(img2.channel_keypoints)
+			'img2_channel_keypoints': list(img2.channel_keypoints),
+			'full_nr_of_matches': decimal.Decimal(str(full_nr_of_matches)),
+			'raw_matches': pack_raw_matches_to_dynamodb(matches)
 			}
 
 	if len(result) > 1:
