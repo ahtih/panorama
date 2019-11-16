@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 # -*- coding: latin-1
 
 # Program for viewing a 360 photosphere in a VR headset
@@ -371,7 +371,7 @@ def load_image(fname_or_id):
 		else:
 			fname_or_id=str(fname_or_id)
 
-	print 'Loading',fname_or_id
+	print('Loading',fname_or_id)
 
 	if fname_or_id.endswith('.npy'):
 		return numpy.load(fname_or_id,'r',False)
@@ -385,7 +385,7 @@ def load_image(fname_or_id):
 		for value in im.size:
 			new_size.append(min(max_img_size,int(value*coeff + 0.5)))
 
-		print 'Resizing image from %dx%d to %dx%d' % (tuple(im.size) + tuple(new_size))
+		print('Resizing image from %dx%d to %dx%d' % (tuple(im.size) + tuple(new_size)))
 		im=im.resize(new_size,Image.ANTIALIAS)
 
 	return numpy.array(im)
@@ -446,11 +446,6 @@ if __name__ == "__main__":
 			cur_frame_timings=[]
 			app.init_gl()
 			glfw.make_context_current(app.window)
-
-			result=renderer.compositor.waitGetPoses(renderer.poses,len(renderer.poses),None,0)
-			if result != 0:
-				print 'compositor error'
-				exit(0)
 			cur_frame_timings.append(int((time.time() - frame_start_time) * 1000))
 
 			app.renderer.render_scene()
@@ -463,13 +458,13 @@ if __name__ == "__main__":
 			render_times_ms.append(cur_frame_timings)
 
 			# getposes_time-=time.time()
-			# print renderer.compositor.waitGetPoses(poses,len(poses),None,0)
+			# print(renderer.compositor.waitGetPoses(poses,len(poses),None,0))
 			# print(poses[openvr.k_unTrackedDeviceIndex_Hmd].mDeviceToAbsoluteTracking)
 			# getposes_time+=time.time()
 
 			if renderer.vr_system.pollNextEvent(ev):
 				if ev.eventType == openvr.VREvent_ButtonPress:
-					# print 'button pressed'
+					# print('button pressed')
 
 					result,controller_state=renderer.vr_system.getControllerState(ev.trackedDeviceIndex)
 					if result:
@@ -478,7 +473,7 @@ if __name__ == "__main__":
 							touchpad_button_dir=(-1 if controller_state.rAxis[0].x < 0 else +1)
 
 						if controller_state.ulButtonPressed & (1 << openvr.k_EButton_ApplicationMenu):
-							print 'Exiting by controller button press'
+							print('Exiting by controller button press')
 							renderer.compositor.compositorQuit()
 							break
 
@@ -487,8 +482,8 @@ if __name__ == "__main__":
 								panorama_actor.center_azimuth_deg+=touchpad_button_dir * 3
 								panorama_actor.center_azimuth_deg%=360
 								center_azimuth_manual_changes[cur_image_id]=panorama_actor.center_azimuth_deg
-								print '   Manual change of center_azimuth_deg to %.0fdeg' % \
-																	(panorama_actor.center_azimuth_deg,)
+								print('   Manual change of center_azimuth_deg to %.0fdeg' % \
+																	(panorama_actor.center_azimuth_deg,))
 								panorama_actor.update()
 								next_image_links_actor.update()
 						elif touchpad_button_dir:
@@ -504,7 +499,7 @@ if __name__ == "__main__":
 											panorama_actor.center_azimuth_deg=go_to_image(cur_image_id)
 							panorama_actor.update()
 							next_image_links_actor.update()
-							# print 'update() call done'
+							# print('update() call done')
 						elif controller_state.ulButtonPressed & (1 << openvr.k_EButton_SteamVR_Trigger):
 							next_image_id=next_image_links_actor.select_active_next_image_link()
 							if next_image_id is not None:
@@ -513,33 +508,33 @@ if __name__ == "__main__":
 											panorama_actor.center_azimuth_deg=go_to_image(cur_image_id)
 								panorama_actor.update()
 								next_image_links_actor.update()
-								# print 'update() call done'
+								# print('update() call done')
 						else:
-							print 'some other button pressed',controller_state.ulButtonPressed
-							# print renderer.compositor.forceReconnectProcess()
-							# print 'forceReconnectProcess() done'
+							print('some other button pressed',controller_state.ulButtonPressed)
+							# print(renderer.compositor.forceReconnectProcess())
+							# print('forceReconnectProcess() done')
 
 			frames_displayed+=1
 			print_interval_frames=200
 			if (frames_displayed % print_interval_frames) == 0 and frames_displayed:
-				# print getposes_time
+				# print(getposes_time)
 				cur_time=time.time()
 
 				time_passed=cur_time - last_print_time
-				print 'Image #%s, %d frames displayed, %.0ffps, display_gl() takes %.0f%% of time' % \
+				print('Image #%s, %d frames displayed, %.0ffps, display_gl() takes %.0f%% of time' % \
 												(cur_image_id,frames_displayed,
 												print_interval_frames / float(time_passed),
-												panorama_actor.display_gl_time * 100 / float(time_passed))
-				# print ' '.join(','.join(map(str,tim)) for tim in render_times_ms)
+												panorama_actor.display_gl_time * 100 / float(time_passed)))
+				# print(' '.join(','.join(map(str,tim)) for tim in render_times_ms))
 
 				last_print_time=cur_time
 				panorama_actor.display_gl_time=0
 				getposes_time=0
 				render_times_ms=[]
 
-		print 'Exiting'
+		print('Exiting')
 
 		if center_azimuth_manual_changes:
-			print 'Manual center_azimuth_deg changes summary:'
+			print('Manual center_azimuth_deg changes summary:')
 			for id,center_azimuth_deg in center_azimuth_manual_changes.items():
-				print 'ID #%s %.0fdeg' % (id,center_azimuth_deg)
+				print('ID #%s %.0fdeg' % (id,center_azimuth_deg))

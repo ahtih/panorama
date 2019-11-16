@@ -1,6 +1,6 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
-import math,random,cPickle
+import math,random,pickle
 
 EARTH_RADIUS_METERS=6371e3
 
@@ -49,13 +49,13 @@ def load_geo_images_list(kml_path='.'):
 		geo_images[e.name]=tuple(e.geometry.coords[0][:2]) + (center_azimuth_deg,owner_uid,sharing_mode)
 
 	k=fastkml.KML()
-	k.from_string(open(kml_path + '/images.kml','r').read())
+	k.from_string(open(kml_path + '/images.kml','r').read().encode('utf-8'))
 	process_KML_feature(k)
 
 def load_from_pickle(pickled_data):
 	global geo_images
 
-	geo_images=cPickle.loads(pickled_data)
+	geo_images=pickle.loads(pickled_data)
 
 def dot_product(v1,v2):
 	return sum([a*b for a,b in zip(v1,v2)])
@@ -132,9 +132,9 @@ if __name__ == '__main__':
 	import sys,os
 
 	if len(sys.argv) < 1+2:
-		print 'Usage:'
-		print
-		print '%s <viewable-images-dir> <output-pickle-file>' % (sys.argv[0],)
+		print('Usage:')
+		print()
+		print('%s <viewable-images-dir> <output-pickle-file>' % (sys.argv[0],))
 		exit(1)
 
 	viewable_images_dir=sys.argv[1]
@@ -146,14 +146,14 @@ if __name__ == '__main__':
 	for image_id in geo_images:
 		dirname=viewable_images_dir + '/' + image_id
 		if not os.access(dirname,os.F_OK):
-			print 'Warning: missing image directory',dirname
+			print('Warning: missing image directory',dirname)
 
 		if geo_images[image_id][4] == 'public':
 			public_images+=1
 		else:
 			private_images+=1
 
-	print '%d public images, %d private images' % (public_images,private_images)
+	print('%d public images, %d private images' % (public_images,private_images))
 
-	cPickle.dump(geo_images,open(sys.argv[2],'w'))
-	print 'Pickle file written'
+	pickle.dump(geo_images,open(sys.argv[2],'w'))
+	print('Pickle file written')
