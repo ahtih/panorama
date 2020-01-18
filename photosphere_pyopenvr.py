@@ -398,7 +398,7 @@ def go_to_image(id):
 	img=load_image(cmdline_fnames[id] if cmdline_fnames else id)
 
 	if not cmdline_fnames:
-		next_image_links=geo_images.select_next_image_links(cur_image_id)
+		next_image_links=geo_images.select_next_image_links(cur_image_id,0)
 
 	return (img,next_image_links,geo_images.geo_images.get(cur_image_id,(None,None,0))[2])
 
