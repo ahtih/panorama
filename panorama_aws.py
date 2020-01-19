@@ -134,6 +134,15 @@ def add_images_to_worker_pool(worker_pool,output_fname,image_fnames,print_verbos
 	processing_batches[processing_batch_key]= \
 							(output_fname,tuple(image_fnames),tuple(s3_fnames),tuple(async_result_objects))
 
+def print_usage_and_exit():
+	print '%s AWS_PROFILE_NAME [--verbose] [--output-fname=PANO_FNAME] IMAGE_FNAME [...]' % (sys.argv[0],)
+	print
+	print '%s AWS_PROFILE_NAME [--verbose] [--panoramas-file=INPUT_FILELIST_FNAME]' % (sys.argv[0],)
+	print
+	print '%s AWS_PROFILE_NAME --output-batch=BATCH_KEY [--output-fname=PANO_FNAME]' % (sys.argv[0],)
+	print
+	exit(0)
+
 keyword_args={}
 positional_args=[]
 
@@ -149,7 +158,10 @@ for arg in sys.argv[1:]:
 	else:
 		positional_args.append(arg)
 
-panorama.init_aws_session(positional_args[0])
+if positional_args:
+	panorama.init_aws_session(positional_args[0])
+else:
+	print_usage_and_exit()
 
 if '--output-batch' in keyword_args:
 	processing_batch_key=keyword_args['--output-batch']
@@ -181,8 +193,10 @@ else:
 					continue
 				add_images_to_worker_pool(worker_pool,fields[0],fields[1:],print_verbose=print_verbose)
 	else:
-		add_images_to_worker_pool(worker_pool,keyword_args.get('--output-fname'),positional_args[1:],
-																			print_verbose=print_verbose)
+		image_fnames=positional_args[1:]
+		if not image_fnames:
+			print_usage_and_exit()
+		add_images_to_worker_pool(worker_pool,keyword_args.get('--output-fname'),image_fnames,print_verbose=print_verbose)
 
 	if print_verbose:
 		print 'Worker tasks submitted'
