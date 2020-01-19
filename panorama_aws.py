@@ -4,15 +4,56 @@
 import sys,os.path,time,random,json,socket,multiprocessing,boto3,panorama,image_rotation_optimiser
 
 def get_match_results(processing_batch_key):
-	try:
-		table=panorama.aws_session.resource('dynamodb').Table(panorama.DYNAMODB_TABLE_NAME)
-		query_result=table.query(KeyConditionExpression=boto3.dynamodb.conditions.Key('processing_batch_key').
-																				eq(processing_batch_key),
-								ConsistentRead=False)
-	except socket.error:
-		return tuple()
+	required_fields=(	'#error',
+						'matched_points',
+						'score',
+						'#count',
+						'angle_deg',
+						'xd',
+						'yd',
+						'debug_str',
 
-	return query_result.get('Items',tuple())
+						'img1_fname',
+						'img1_focal_length_35mm',
+						'img1_channel_keypoints',
+						'img1_focal_length_pixels',
+						'img1_width',
+						'img1_height',
+
+						'img2_fname',
+						'img2_focal_length_35mm',
+						'img2_channel_keypoints',
+						'img2_focal_length_pixels',
+						'img2_width',
+						'img2_height',
+						)
+
+	result_items=[]
+	start_key=None
+	while True:
+		try:
+			table=panorama.aws_session.resource('dynamodb').Table(panorama.DYNAMODB_TABLE_NAME)
+			extra_kwargs=dict()
+			if start_key is not None:
+				extra_kwargs['ExclusiveStartKey']=start_key
+			query_result=table.query(KeyConditionExpression=boto3.dynamodb.conditions.Key('processing_batch_key').
+																				eq(processing_batch_key),
+					ProjectionExpression=','.join(required_fields),		# We are using this to exclude raw match attributes, which are large
+					ExpressionAttributeNames={'#count':'count','#error':'error'},	# We have to use this because count and error are reserved words
+					ConsistentRead=False,**extra_kwargs)
+		except socket.error:
+			return tuple()
+
+		result_items+=query_result.get('Items',tuple())
+
+		# print len(query_result['Items']),start_key,query_result.keys()
+
+		if 'LastEvaluatedKey' not in query_result:
+			break
+
+		start_key=query_result['LastEvaluatedKey']
+
+	return result_items
 
 def write_output_file(match_results,output_fname=None,print_verbose=False):
 	images=[]		# (fname,focal_length_35mm,channel_keypoints,focal_length_pixels)
