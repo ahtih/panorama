@@ -155,10 +155,13 @@ def extract_keypoints_and_upload_to_s3(fname,s3_fname,print_verbose=False):
 
 	img.save_to_s3(s3_fname)
 
-def add_images_to_worker_pool(worker_pool,output_fname,image_fnames,print_verbose=False):
-		# Updates processing_batches
+def expected_nr_of_match_results(nr_of_images):
+	return nr_of_images * (nr_of_images-1) / 2
 
-	global processing_batches
+def add_images_to_worker_pool(worker_pool,output_fname,image_fnames,print_verbose=False):
+		# Updates processing_batches and total_expected_nr_of_match_results
+
+	global processing_batches,total_expected_nr_of_match_results
 
 	processing_batch_key='%016x' % (random.randint(0,2**64-1),)
 	print '%s: Creating processing batch %s with %u images' % (output_fname or '-',processing_batch_key,
@@ -174,6 +177,7 @@ def add_images_to_worker_pool(worker_pool,output_fname,image_fnames,print_verbos
 
 	processing_batches[processing_batch_key]= \
 							(output_fname,tuple(image_fnames),tuple(s3_fnames),tuple(async_result_objects))
+	total_expected_nr_of_match_results+=expected_nr_of_match_results(len(s3_fnames))
 
 def print_usage_and_exit():
 	print '%s AWS_PROFILE_NAME [--verbose] [--output-fname=PANO_FNAME] IMAGE_FNAME [...]' % (sys.argv[0],)
@@ -218,6 +222,7 @@ else:
 	worker_pool=multiprocessing.Pool(8*2)
 
 	processing_batches=dict()
+	total_expected_nr_of_match_results=0
 
 	panorama_fnames=keyword_args.get('--panoramas-file')
 	if panorama_fnames:
@@ -245,16 +250,16 @@ else:
 	match_images_started=set()
 	match_images_failed=set()
 	batches_completed=set()
+	total_match_results=0
 
 	while True:
 		something_was_done=False
 
 		if print_verbose:
 			print len(processing_batches),len(match_images_started),len(match_images_failed), \
-																					len(batches_completed)
+														total_match_results,total_expected_nr_of_match_results,len(batches_completed)
 
-		for processing_batch_key in set(processing_batches.keys()) - \
-																match_images_started - match_images_failed:
+		for processing_batch_key in set(processing_batches.keys()) - match_images_started - match_images_failed:
 			output_fname,image_fnames,s3_fnames,async_result_objects=processing_batches[processing_batch_key]
 			if not min([a.ready() for a in async_result_objects]):
 				continue
@@ -293,13 +298,15 @@ else:
 				match_images_failed.add(processing_batch_key)
 				print '%s: Lambda invoke failed with: %s' % (output_fname or '-',invoke_result)
 
+		total_match_results=0
+
 		for processing_batch_key in match_images_started - batches_completed:
 			s3_fnames=processing_batches[processing_batch_key][2]
-			expected_nr_of_match_results=len(s3_fnames) * (len(s3_fnames)-1) / 2
 
 			match_results=get_match_results(processing_batch_key)
+			total_match_results+=len(match_results)
 
-			if len(match_results) < expected_nr_of_match_results:
+			if len(match_results) < expected_nr_of_match_results(len(s3_fnames)):
 				continue
 
 			something_was_done=True
