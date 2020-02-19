@@ -155,5 +155,5 @@ if __name__ == '__main__':
 
 	print('%d public images, %d private images' % (public_images,private_images))
 
-	pickle.dump(geo_images,open(sys.argv[2],'w'))
+	pickle.dump(geo_images,open(sys.argv[2],'wb'),2)
 	print('Pickle file written')
