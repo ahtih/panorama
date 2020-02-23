@@ -407,7 +407,7 @@ if __name__ == "__main__":
 
 	cmdline_fnames=sys.argv[1:]
 	if not cmdline_fnames:
-		geo_images.load_geo_images_list(VIEWABLE_IMAGES_PATH)
+		geo_images.load_from_pickle(open(VIEWABLE_IMAGES_PATH + '/geo-images.pickle','rb').read())
 		cur_image_id=max(geo_images.geo_images.keys())
 	else:
 		cur_image_id=0
